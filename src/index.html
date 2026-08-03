@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+<title>Shiny Race Studio</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div>
+    <p class="eyebrow">Game Boy Advance · Génération 3</p>
+    <h1>Shiny Race <span class="star">✦</span> Studio</h1>
+  </div>
+  <button class="btn primary" id="open">Ouvrir une ROM</button>
+</header>
+
+<div id="idcard"></div>
+
+<nav class="tabs" id="tabs">
+  <button class="tab" data-t="shiny" aria-selected="true">Taux de shiny</button>
+  <button class="tab" data-t="wild" aria-selected="false">Randomizer</button>
+  <button class="tab" data-t="upr" aria-selected="false">Randomizer complet</button>
+  <button class="tab" data-t="compat" aria-selected="false">Compatibilité</button>
+</nav>
+
+<!-- ============================ SHINY ============================ -->
+<section class="pane" id="pane-shiny" hidden>
+  <div class="field">
+    <label>Taux voulu</label>
+    <div class="chips" id="rates"></div>
+    <p class="note">Plafond à <b>1/256</b> : la constante comparée tient sur un octet en THUMB, soit 256 valeurs sur 65536 au maximum.</p>
+  </div>
+  <div id="hits"></div>
+</section>
+
+<!-- ============================ WILD ============================= -->
+<section class="pane" id="pane-wild" hidden>
+  <div id="wildstatus"></div>
+
+  <div class="field">
+    <label>Mode de tirage</label>
+    <div class="chips" id="modes">
+      <button class="chip" data-m="global" aria-pressed="true">Correspondance globale</button>
+      <button class="chip" data-m="area" aria-pressed="false">Par zone</button>
+      <button class="chip" data-m="full" aria-pressed="false">Chaque slot au hasard</button>
+    </div>
+    <p class="note" id="modehelp">Chaque espèce d'origine est remplacée par la même espèce partout dans le jeu. Les Roucool restent des Roucool, mais deviennent tous autre chose.</p>
+  </div>
+
+  <div class="field">
+    <label for="seed">Graine</label>
+    <div class="row">
+      <input id="seed" type="text" value="race-01" spellcheck="false">
+      <button class="btn ghost small" id="reseed">Tirer au sort</button>
+    </div>
+    <p class="note">Même graine + même ROM = ROM identique au bit près. Donne la même graine à tous les participants pour une race équitable, ou une graine différente à chacun pour une race à l'aveugle.</p>
+  </div>
+
+  <label class="check"><input type="checkbox" id="nodupes" checked> Éviter les doublons dans une même table de rencontres</label>
+  <label class="check"><input type="checkbox" id="alsoshiny" checked> Appliquer aussi le taux de shiny choisi dans l'onglet précédent</label>
+
+  <div class="acts">
+    <button class="btn primary" id="gen">Générer la ROM</button>
+    <button class="btn ghost" id="genips">Exporter en .ips</button>
+  </div>
+  <div id="wildout"></div>
+</section>
+
+<!-- ============================= UPR ============================== -->
+<section class="pane" id="pane-upr" hidden>
+  <div id="setup"></div>
+
+  <div class="field">
+    <label for="preset">Préréglage</label>
+    <div class="row">
+      <select id="preset"></select>
+      <button class="btn ghost small" id="addpreset">Ajouter un fichier…</button>
+    </div>
+    <p class="note">Un préréglage définit ce qui est randomisé : dresseurs, capacités, statistiques, types, objets, starters. Les préréglages livrés couvrent les formats de race courants.</p>
+  </div>
+
+  <label class="check"><input type="checkbox" id="uprshiny" checked> Appliquer aussi le taux de shiny après randomisation (3G uniquement)</label>
+
+  <div class="acts">
+    <button class="btn primary" id="runupr" disabled>Randomiser</button>
+  </div>
+  <pre id="uprlog" class="log" hidden></pre>
+</section>
+
+<section class="pane" id="pane-compat" hidden>
+  <div id="compat"></div>
+</section>
+
+<footer>
+  Outil de modification pour des ROMs que tu possèdes légalement. Il ne contient, ne télécharge et ne distribue aucun jeu.
+</footer>
+
+<script src="games.js"></script>
+<script src="platforms.js"></script>
+<script src="rom.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
