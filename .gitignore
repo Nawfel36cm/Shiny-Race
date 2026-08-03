@@ -1,0 +1,4 @@
+node_modules/
+dist/
+vendor/jre/
+vendor/*.jar
