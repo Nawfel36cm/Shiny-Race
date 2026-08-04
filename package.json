@@ -11,7 +11,7 @@
     "build:linux": "electron-builder --linux",
     "test": "node test/nds.test.js"
   },
-  "author": "",
+  "author": "Nawfel36cm",
   "license": "MIT",
   "devDependencies": {
     "electron": "^31.0.0",
@@ -32,7 +32,8 @@
     },
     "win": {
       "target": [
-        "nsis"
+        "nsis",
+        "zip"
       ]
     },
     "nsis": {
@@ -41,13 +42,15 @@
     },
     "mac": {
       "target": [
-        "dmg"
+        "dmg",
+        "zip"
       ],
       "category": "public.app-category.utilities"
     },
     "linux": {
       "target": [
-        "AppImage"
+        "AppImage",
+        "zip"
       ],
       "category": "Utility"
     },
@@ -63,8 +66,8 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "TON-PSEUDO-GITHUB",
-        "repo": "shiny-race-studio"
+        "owner": "Nawfel36cm",
+        "repo": "Shiny-Race"
       }
     ]
   },
