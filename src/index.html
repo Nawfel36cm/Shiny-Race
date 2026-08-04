@@ -36,7 +36,19 @@
   <div class="field">
     <label>Taux voulu</label>
     <div class="chips" id="rates"></div>
-    <p class="note">Plafond à <b>1/256</b> : la constante comparée tient sur un octet en THUMB, soit 256 valeurs sur 65536 au maximum.</p>
+  </div>
+
+  <div class="field">
+    <label for="customrate">Ou saisis le tien</label>
+    <div class="row">
+      <span class="pill dim">1 sur</span>
+      <input type="text" id="customrate" inputmode="numeric" placeholder="256" style="min-width:120px">
+      <button class="btn ghost small" id="applyrate">Appliquer</button>
+    </div>
+    <div id="customout" style="margin-top:12px"></div>
+    <p class="note">En génération 3, le maximum atteignable est <b>1/256</b> : la constante comparée
+    tient sur un octet d'instruction THUMB. Une valeur plus basse sera ramenée à ce plafond,
+    et le logiciel te dira exactement ce qu'il a appliqué.</p>
   </div>
   <div id="hits"></div>
 </section>
@@ -97,6 +109,14 @@
 
 <section class="pane" id="pane-compat" hidden>
   <div id="compat"></div>
+</section>
+
+<section class="field" id="updsection">
+  <label>Mises à jour</label>
+  <div class="row">
+    <button class="btn ghost" id="updbtn">Vérifier maintenant</button>
+  </div>
+  <div id="updbox" style="margin-top:12px"></div>
 </section>
 
 <footer>

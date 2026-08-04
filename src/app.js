@@ -5,7 +5,7 @@ const $ = id => document.getElementById(id);
 const hex = (n, p = 2) => n.toString(16).toUpperCase().padStart(p, '0');
 
 let rom = null, romPath = '', romName = '';
-let shinyHits = [], rateIdx = 5;
+let shinyHits = [], rateIdx = 5, customCount = null;
 let table = null, encounters = [], mode = 'global';
 let jar = null, settings = null;
 
@@ -101,13 +101,33 @@ document.querySelectorAll('.tab').forEach(b => b.onclick = () => { if (!b.disabl
 /* ---------------------------- shiny --------------------------- */
 function renderRates() {
   $('rates').innerHTML = R.SHINY_RATES.map((r, i) =>
-    `<button class="chip" data-i="${i}" aria-pressed="${i === rateIdx}">${r.label}</button>`).join('');
+    `<button class="chip" data-i="${i}" aria-pressed="${customCount === null && i === rateIdx}">${r.label}</button>`).join('');
   $('rates').querySelectorAll('.chip').forEach(b => b.onclick = () => {
-    rateIdx = +b.dataset.i; renderRates(); renderShiny();
+    rateIdx = +b.dataset.i; customCount = null;
+    $('customrate').value = ''; $('customout').innerHTML = '';
+    renderRates(); renderShiny();
   });
 }
 
-const shinyList = () => R.shinyPatches(shinyHits, R.SHINY_RATES[rateIdx].count);
+/* Taux libre : l'utilisateur saisit le denominateur voulu. */
+function applyCustomRate() {
+  const raw = $('customrate').value.trim();
+  if (!raw) { customCount = null; $('customout').innerHTML = ''; renderRates(); renderShiny(); return; }
+  const r = R.countFromDenominator(raw);
+  customCount = r.count;
+  $('customout').innerHTML = r.capped
+    ? `<div class="msg"><b>1/${r.denomAsked} est hors de portee en generation 3.</b>
+       Le taux applique sera <b>1/${r.denomReal}</b>, le maximum atteignable.
+       <p>La raison est materielle : le jeu compare le resultat a une constante logee dans un seul octet
+       d'une instruction THUMB. Au-dela de 256 valeurs favorables sur 65536, il faudrait injecter du code,
+       pas seulement reecrire un octet.</p></div>`
+    : `<div class="msg good">Taux applique : <b>1/${r.denomReal}</b>
+       (${r.count} valeur${r.count > 1 ? 's' : ''} favorable${r.count > 1 ? 's' : ''} sur 65536).</div>`;
+  renderRates(); renderShiny();
+}
+
+const activeCount = () => customCount !== null ? customCount : R.SHINY_RATES[rateIdx].count;
+const shinyList = () => R.shinyPatches(shinyHits, activeCount());
 
 function renderShiny() {
   if (!shinyHits.length) {
@@ -164,8 +184,11 @@ function buildPatched() {
   return { out, writes };
 }
 
+const rateLabel = () => customCount !== null
+  ? '1-' + Math.round(65536 / customCount)
+  : R.SHINY_RATES[rateIdx].label.replace('/', '-');
 const stem = () => romName.replace(/\.[^.]+$/, '') +
-  ` [${$('seed').value}${$('alsoshiny').checked ? ' ' + R.SHINY_RATES[rateIdx].label.replace('/', '-') : ''}]`;
+  ` [${$('seed').value}${$('alsoshiny').checked ? ' ' + rateLabel() : ''}]`;
 
 $('gen').onclick = async () => {
   const { out, writes } = buildPatched();
@@ -272,3 +295,35 @@ $('runupr').onclick = async () => {
 };
 
 window.addEventListener('DOMContentLoaded', refreshSetup);
+
+
+/* cablage du taux libre (ici et pas en ligne dans le HTML : la politique
+   de securite de la fenetre interdit les scripts inline) */
+$('applyrate').onclick = applyCustomRate;
+$('customrate').addEventListener('keydown', e => { if (e.key === 'Enter') applyCustomRate(); });
+
+/* ---------------------- mises a jour -------------------------- */
+(function updates(){
+  const box = document.getElementById('updbox');
+  const btn = document.getElementById('updbtn');
+  if (!box || !btn || !window.api.update) return;
+
+  const say = (html, cls) => { box.innerHTML = `<div class="msg${cls ? ' ' + cls : ''}">${html}</div>`; };
+
+  window.api.update.on((_evt, msg) => {
+    if (msg.state === 'checking')   say('Recherche d\'une nouvelle version…');
+    if (msg.state === 'none')       say('Tu es a jour (version ' + msg.version + ').', 'good');
+    if (msg.state === 'found')      say(`<b>Version ${msg.version} disponible.</b> Telechargement en cours…`);
+    if (msg.state === 'progress')   say(`Telechargement : ${Math.round(msg.percent)} %`);
+    if (msg.state === 'ready') {
+      say(`<b>Version ${msg.version} prete.</b> Elle s'installera au redemarrage.
+           <div class="acts"><button class="btn primary" id="updnow">Redemarrer et installer</button></div>`, 'good');
+      document.getElementById('updnow').onclick = () => window.api.update.install();
+    }
+    if (msg.state === 'error')      say('<b>Verification impossible.</b> ' + (msg.message || ''));
+    if (msg.state === 'portable')   say("Cette copie est la version portable : elle ne se met pas a jour toute seule. Retelecharge la derniere version quand tu veux.");
+    btn.disabled = msg.state === 'checking' || msg.state === 'progress';
+  });
+
+  btn.onclick = () => { btn.disabled = true; window.api.update.check(); };
+})();

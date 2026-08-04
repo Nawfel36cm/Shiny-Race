@@ -9,18 +9,6 @@
 
 const GENS = [
   {
-    gen: 1, platform: 'gb', label: 'Game Boy', rate: null,
-    shiny: 'impossible', rando: 'upr',
-    why: "Les Pokémon chromatiques n'existent pas encore : ils apparaissent en 2G.",
-    games: ['Rouge', 'Bleu', 'Jaune']
-  },
-  {
-    gen: 2, platform: 'gb', label: 'Game Boy Color', rate: '1/8192',
-    shiny: 'prevu', rando: 'upr',
-    why: "La shininess est déduite des DV, pas d'une constante : augmenter le taux force aussi certaines statistiques.",
-    games: ['Or', 'Argent', 'Cristal']
-  },
-  {
     gen: 3, platform: 'gba', label: 'Game Boy Advance', rate: '1/8192',
     shiny: 'natif', rando: 'natif',
     why: "Un seul octet à réécrire. Rencontres sauvages randomisées nativement.",

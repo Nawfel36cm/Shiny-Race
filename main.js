@@ -24,13 +24,45 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'src', 'index.html'));
 }
 
+/* ------------------------------------------------------------------ *
+ *  Mises à jour                                                       *
+ *                                                                     *
+ *  Deux chemins : une vérification silencieuse au démarrage, et un    *
+ *  bouton dans l'interface. Les deux passent par les mêmes événements *
+ *  d'electron-updater, réémis vers la fenêtre pour l'affichage.       *
+ * ------------------------------------------------------------------ */
+autoUpdater.autoDownload = true;
+autoUpdater.autoInstallOnAppQuit = true;
+
+const toWindow = msg => { if (win && !win.isDestroyed()) win.webContents.send('update', msg); };
+
+autoUpdater.on('checking-for-update', () => toWindow({ state: 'checking' }));
+autoUpdater.on('update-not-available', i => toWindow({ state: 'none', version: (i && i.version) || app.getVersion() }));
+autoUpdater.on('update-available',     i => toWindow({ state: 'found', version: i && i.version }));
+autoUpdater.on('download-progress',    p => toWindow({ state: 'progress', percent: p.percent }));
+autoUpdater.on('update-downloaded',    i => toWindow({ state: 'ready', version: i && i.version }));
+autoUpdater.on('error',                e => toWindow({ state: 'error', message: String(e && e.message || e) }));
+
+/* La version portable est décompressée par l'utilisateur : elle n'a ni
+   installeur ni droits d'écriture garantis, donc pas de mise à jour en
+   place. On le dit plutôt que d'échouer silencieusement. */
+const isPortable = () => !!process.env.PORTABLE_EXECUTABLE_DIR
+  || (process.platform === 'win32' && !/\\AppData\\Local\\Programs\\/i.test(process.execPath)
+      && !/\\Program Files/i.test(process.execPath));
+
+ipcMain.handle('update-check', async () => {
+  if (!app.isPackaged) return toWindow({ state: 'none', version: app.getVersion() + ' (développement)' });
+  if (isPortable())    return toWindow({ state: 'portable' });
+  try { await autoUpdater.checkForUpdates(); }
+  catch (e) { toWindow({ state: 'error', message: String(e && e.message || e) }); }
+});
+
+ipcMain.handle('update-install', async () => { autoUpdater.quitAndInstall(); });
+
 app.whenReady().then(() => {
   createWindow();
-  // Mise à jour automatique : l'application interroge les Releases GitHub
-  // au démarrage, télécharge la nouvelle version en tâche de fond et
-  // l'installe à la fermeture. L'utilisateur n'a rien à faire.
-  if (app.isPackaged) {
-    autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+  if (app.isPackaged && !isPortable()) {
+    autoUpdater.checkForUpdates().catch(() => {});
   }
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

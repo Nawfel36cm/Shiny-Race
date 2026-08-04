@@ -9,5 +9,10 @@ contextBridge.exposeInMainWorld('api', {
   setupState: ()            => ipcRenderer.invoke('setup-state'),
   setPath:    opts          => ipcRenderer.invoke('set-path', opts),
   runUpr:     opts          => ipcRenderer.invoke('run-upr', opts),
-  onUprLog:   cb            => ipcRenderer.on('upr-log', (_e, line) => cb(line))
+  onUprLog:   cb            => ipcRenderer.on('upr-log', (_e, line) => cb(line)),
+  update: {
+    check:   ()  => ipcRenderer.invoke('update-check'),
+    install: ()  => ipcRenderer.invoke('update-install'),
+    on:      cb  => ipcRenderer.on('update', cb)
+  }
 });

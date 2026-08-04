@@ -44,6 +44,25 @@ const SHINY_RATES = [
   { label: '1/512',  count: 128 },{ label: '1/256',  count: 256 }
 ];
 
+/* Taux libre. Le jeu tire un PID sur 16 bits ; il est shiny quand la valeur
+   comparee est inferieure a `count`, soit une chance sur 65536/count.
+   L'immediat d'un `cmp` THUMB tient sur un octet, d'ou le plafond a 256. */
+const RATE_MAX_COUNT = 256;
+
+/** Denominateur voulu (ex. 256 pour 1/256) -> nombre de valeurs favorables. */
+function countFromDenominator(denom) {
+  const d = Math.max(1, Math.round(Number(denom) || 0));
+  const wanted = Math.round(65536 / d);
+  const count = Math.min(RATE_MAX_COUNT, Math.max(1, wanted));
+  return {
+    count,
+    wanted,
+    denomAsked: d,
+    denomReal: Math.round(65536 / count),
+    capped: wanted > RATE_MAX_COUNT
+  };
+}
+
 function findShinyChecks(b) {
   const out = [];
   for (let i = 0; i < b.length - 6; i += 2) {
@@ -243,7 +262,7 @@ async function sha1(buffer) {
 /* Exposition globale : Electron charge les pages en file://, où les modules
    ES sont bloqués par Chromium. On reste donc sur de simples scripts. */
 window.ROM = {
-  GAMES, REGIONS, SHINY_RATES, VALID_SPECIES,
+  GAMES, REGIONS, SHINY_RATES, VALID_SPECIES, RATE_MAX_COUNT, countFromDenominator,
   readHeader, findShinyChecks, shinyPatches,
   findEncounterTable, readEncounters, randomizeEncounters, applyEncounters,
   rng, buildIPS, sha1
