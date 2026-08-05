@@ -41,7 +41,7 @@ $('open').onclick = async () => {
   shinyHits = R.findShinyChecks(rom);
   table = R.findEncounterTable(rom);
   encounters = table ? R.readEncounters(rom, table) : [];
-  starters = R.findStarters(rom);
+  starters = R.findStarters(rom, h.code);
 
   renderCompat(info.platform.id);
   show('shiny');
@@ -173,7 +173,15 @@ function renderStarters() {
   const box = $('starterstatus');
   if (!box) return;
   if (!starters) {
-    box.innerHTML = `<div class="msg"><b>Starters introuvables.</b> La suite d'octets attendue n'apparaît pas dans cette ROM.</div>`;
+    box.innerHTML = `<div class="msg"><b>Jeu non reconnu.</b> Le code d'en-tête ne correspond à aucun
+      ensemble de starters connu, donc la recherche n'a pas été tentée.</div>`;
+    $('dostarters').checked = false; $('dostarters').disabled = true;
+    return;
+  }
+  if (starters.missing) {
+    box.innerHTML = `<div class="msg"><b>Starters introuvables.</b> Jeu identifié comme
+      <b>${starters.code}</b>, dont les starters d'origine sont ${starters.label} — mais la suite
+      d'octets attendue n'apparaît nulle part. ROM déjà modifiée, ou hack.</div>`;
     $('dostarters').checked = false; $('dostarters').disabled = true;
     return;
   }
@@ -184,7 +192,7 @@ function renderStarters() {
     return;
   }
   $('dostarters').disabled = false;
-  box.innerHTML = `<div class="msg good"><b>Starters trouvés</b> — ${starters.label} —
+  box.innerHTML = `<div class="msg good"><b>Starters trouvés</b> — ${starters.code} · ${starters.label} —
     à ${starters.offsets.length} endroit${starters.offsets.length > 1 ? 's' : ''}
     (0x${starters.offsets.map(o => hex(o, 6)).join(', 0x')}). Ils seront remplacés par trois espèces
     tirées avec la même graine.</div>`;
@@ -219,7 +227,7 @@ function buildPatched() {
   }
 
   let start = { writes: [], species: [] };
-  if (starters && !starters.tooMany && $('dostarters').checked) {
+  if (starters && !starters.tooMany && !starters.missing && $('dostarters').checked) {
     start = R.randomizeStarters(starters, seed);
     R.applyStarters(out, start.writes);
   }
@@ -230,7 +238,8 @@ function buildPatched() {
   return { out, writes, shiny, start };
 }
 
-const canExport = () => rom && (shinyHits.length || (table && encounters.length) || starters);
+const canExport = () => rom && (shinyHits.length || (table && encounters.length)
+  || (starters && !starters.missing && !starters.tooMany));
 
 function syncExportButtons() {
   const ok = !!canExport();

@@ -234,16 +234,30 @@ function randomizeEncounters(list, { mode = 'global', seed = 'race', noDupes = t
  *  marche sur toutes les versions et toutes les langues.            *
  * ---------------------------------------------------------------- */
 const STARTER_SETS = [
-  { id: 'rse',  label: 'Arcko, Poussifeu, Gobou',        species: [277, 280, 283] },
-  { id: 'frlg', label: 'Bulbizarre, Salameche, Carapuce', species: [1, 4, 7] }
+  { id: 'rse',  label: 'Arcko, Poussifeu, Gobou',         species: [277, 280, 283],
+    codes: ['AXV', 'AXP', 'BPE'] },
+  { id: 'frlg', label: 'Bulbizarre, Salameche, Carapuce', species: [1, 4, 7],
+    codes: ['BPR', 'BPG'] }
 ];
 
 /* Au-dela de ce nombre d'occurrences, la suite d'octets est trop banale
    pour etre la table des starters : on refuse plutot que de corrompre. */
 const STARTER_MAX_HITS = 12;
 
-function findStarters(b) {
-  for (const set of STARTER_SETS) {
+/* Le jeu est identifie par son code d'en-tete, pas en essayant les
+   signatures a l'aveugle : sur une ROM Rouge Feu, les six octets des
+   starters d'Emeraude peuvent apparaitre par hasard, et on patcherait
+   alors du remplissage au lieu de la vraie table. */
+function findStarters(b, code) {
+  /* L'en-tete porte quatre caracteres : trois pour le jeu, un pour la
+     langue (BPRE, BPRF, BPRD...). On ne compare que les trois premiers,
+     pour couvrir toutes les langues d'un meme jeu. */
+  const key = String(code || '').slice(0, 3).toUpperCase();
+  const wanted = key ? STARTER_SETS.filter(x => x.codes.includes(key)) : [];
+  const list = wanted.length ? wanted : STARTER_SETS;
+  let lastTried = null;
+
+  for (const set of list) {
     const pat = [];
     for (const sp of set.species) pat.push(sp & 0xFF, sp >> 8 & 0xFF);
 
@@ -254,21 +268,22 @@ function findStarters(b) {
       if (ok) offs.push(i);
       if (offs.length > STARTER_MAX_HITS) break;
     }
-    if (!offs.length) continue;
+    if (!offs.length) { lastTried = set; continue; }
     return {
       set: set.id,
+      code: code || '?',
       label: set.label,
       species: set.species.slice(),
       offsets: offs,
       tooMany: offs.length > STARTER_MAX_HITS
     };
   }
-  return null;
+  return lastTried ? { missing: true, label: lastTried.label, code: code || '?' } : null;
 }
 
 /** Tire trois especes distinctes et rend les octets a ecrire. */
 function randomizeStarters(found, seed) {
-  if (!found || found.tooMany) return { writes: [], species: [] };
+  if (!found || found.tooMany || found.missing) return { writes: [], species: [] };
   const rand = rng('starters:' + seed);
   const picked = [];
   let guard = 0;
