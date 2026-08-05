@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
   setPath:    opts          => ipcRenderer.invoke('set-path', opts),
   runUpr:     opts          => ipcRenderer.invoke('run-upr', opts),
   onUprLog:   cb            => ipcRenderer.on('upr-log', (_e, line) => cb(line)),
+  appVersion: ()  => ipcRenderer.invoke('app-version'),
   update: {
     check:   ()  => ipcRenderer.invoke('update-check'),
     install: ()  => ipcRenderer.invoke('update-install'),

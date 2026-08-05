@@ -410,3 +410,14 @@ $('customrate').addEventListener('keydown', e => { if (e.key === 'Enter') applyC
 
   btn.onclick = () => { btn.disabled = true; window.api.update.check(); };
 })();
+
+
+/* Version affichee en clair : permet de verifier d'un coup d'oeil
+   qu'on lance bien la derniere build et pas une copie precedente. */
+(async () => {
+  const el = document.getElementById('verline');
+  if (!el) return;
+  let v = '—';
+  try { if (window.api.appVersion) v = await window.api.appVersion(); } catch {}
+  el.textContent = 'version ' + v;
+})();

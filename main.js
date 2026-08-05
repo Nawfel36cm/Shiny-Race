@@ -59,6 +59,8 @@ ipcMain.handle('update-check', async () => {
 
 ipcMain.handle('update-install', async () => { autoUpdater.quitAndInstall(); });
 
+ipcMain.handle('app-version', async () => app.getVersion());
+
 app.whenReady().then(() => {
   createWindow();
   if (app.isPackaged && !isPortable()) {
