@@ -225,6 +225,70 @@ function randomizeEncounters(list, { mode = 'global', seed = 'race', noDupes = t
   return writes;
 }
 
+/* ---------------------------------------------------------------- *
+ *  Starters                                                        *
+ *                                                                  *
+ *  Les trois especes de depart sont stockees cote a cote, en u16,   *
+ *  dans les indices internes de la generation 3. On les repere par  *
+ *  leur suite d'octets plutot que par une adresse : le meme code    *
+ *  marche sur toutes les versions et toutes les langues.            *
+ * ---------------------------------------------------------------- */
+const STARTER_SETS = [
+  { id: 'rse',  label: 'Arcko, Poussifeu, Gobou',        species: [277, 280, 283] },
+  { id: 'frlg', label: 'Bulbizarre, Salameche, Carapuce', species: [1, 4, 7] }
+];
+
+/* Au-dela de ce nombre d'occurrences, la suite d'octets est trop banale
+   pour etre la table des starters : on refuse plutot que de corrompre. */
+const STARTER_MAX_HITS = 12;
+
+function findStarters(b) {
+  for (const set of STARTER_SETS) {
+    const pat = [];
+    for (const sp of set.species) pat.push(sp & 0xFF, sp >> 8 & 0xFF);
+
+    const offs = [];
+    for (let i = 0; i + pat.length <= b.length; i += 2) {
+      let ok = true;
+      for (let k = 0; k < pat.length; k++) if (b[i + k] !== pat[k]) { ok = false; break; }
+      if (ok) offs.push(i);
+      if (offs.length > STARTER_MAX_HITS) break;
+    }
+    if (!offs.length) continue;
+    return {
+      set: set.id,
+      label: set.label,
+      species: set.species.slice(),
+      offsets: offs,
+      tooMany: offs.length > STARTER_MAX_HITS
+    };
+  }
+  return null;
+}
+
+/** Tire trois especes distinctes et rend les octets a ecrire. */
+function randomizeStarters(found, seed) {
+  if (!found || found.tooMany) return { writes: [], species: [] };
+  const rand = rng('starters:' + seed);
+  const picked = [];
+  let guard = 0;
+  while (picked.length < 3 && guard++ < 400) {
+    const sp = VALID_SPECIES[Math.floor(rand() * VALID_SPECIES.length)];
+    if (!picked.includes(sp)) picked.push(sp);
+  }
+  const writes = [];
+  for (const off of found.offsets) {
+    picked.forEach((sp, k) => {
+      writes.push({ off: off + k * 2, lo: sp & 0xFF, hi: sp >> 8 & 0xFF, species: sp });
+    });
+  }
+  return { writes, species: picked };
+}
+
+function applyStarters(rom, writes) {
+  for (const w of writes) { rom[w.off] = w.lo; rom[w.off + 1] = w.hi; }
+}
+
 function applyEncounters(rom, writes) {
   for (const w of writes) {
     rom[w.off + 2] = w.species & 0xFF;
@@ -265,5 +329,6 @@ window.ROM = {
   GAMES, REGIONS, SHINY_RATES, VALID_SPECIES, RATE_MAX_COUNT, countFromDenominator,
   readHeader, findShinyChecks, shinyPatches,
   findEncounterTable, readEncounters, randomizeEncounters, applyEncounters,
+  findStarters, randomizeStarters, applyStarters, STARTER_SETS,
   rng, buildIPS, sha1
 };

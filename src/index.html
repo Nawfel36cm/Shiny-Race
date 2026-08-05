@@ -51,6 +51,15 @@
     et le logiciel te dira exactement ce qu'il a appliqué.</p>
   </div>
   <div id="hits"></div>
+
+  <div class="acts">
+    <button class="btn primary" id="shinygen" disabled>Générer la ROM</button>
+    <button class="btn ghost" id="shinyips" disabled>Exporter en .ips</button>
+  </div>
+  <div id="shinyout"></div>
+  <p class="note">Un seul export pour les deux traitements : le taux de shiny <b>et</b> les rencontres
+  sauvages réglées dans l'onglet Randomizer partent ensemble dans le même fichier. Les boutons sont
+  identiques dans les deux onglets.</p>
 </section>
 
 <!-- ============================ WILD ============================= -->
@@ -77,13 +86,27 @@
   </div>
 
   <label class="check"><input type="checkbox" id="nodupes" checked> Éviter les doublons dans une même table de rencontres</label>
-  <label class="check"><input type="checkbox" id="alsoshiny" checked> Appliquer aussi le taux de shiny choisi dans l'onglet précédent</label>
 
+  <div class="field">
+    <label>Starters</label>
+    <div id="starterstatus"></div>
+    <label class="check"><input type="checkbox" id="dostarters" checked> Randomiser aussi les trois Pokémon de départ</label>
+  </div>
+
+  <div class="field">
+    <label>Légendaires, dresseurs, échanges, cadeaux</label>
+    <p class="note">Ces Pokémon ne vivent pas dans une table mais dispersés dans les scripts de map.
+    Les randomiser demande la base d'offsets de l'Universal Pokémon Randomizer ZX — utilise l'onglet
+    <b>Randomizer complet</b>, qui couvre les 28 jeux.</p>
+  </div>
+  
   <div class="acts">
-    <button class="btn primary" id="gen">Générer la ROM</button>
-    <button class="btn ghost" id="genips">Exporter en .ips</button>
+    <button class="btn primary" id="gen" disabled>Générer la ROM</button>
+    <button class="btn ghost" id="genips" disabled>Exporter en .ips</button>
   </div>
   <div id="wildout"></div>
+  <p class="note">Le taux de shiny réglé dans l'onglet précédent est appliqué dans le même fichier.
+  Si la table de rencontres reste introuvable, l'export se fait quand même avec le seul taux de shiny.</p>
 </section>
 
 <!-- ============================= UPR ============================== -->

@@ -6,7 +6,7 @@ const hex = (n, p = 2) => n.toString(16).toUpperCase().padStart(p, '0');
 
 let rom = null, romPath = '', romName = '';
 let shinyHits = [], rateIdx = 5, customCount = null;
-let table = null, encounters = [], mode = 'global';
+let table = null, encounters = [], mode = 'global', starters = null;
 let jar = null, settings = null;
 
 /* ------------------------- ouverture ------------------------- */
@@ -41,10 +41,11 @@ $('open').onclick = async () => {
   shinyHits = R.findShinyChecks(rom);
   table = R.findEncounterTable(rom);
   encounters = table ? R.readEncounters(rom, table) : [];
+  starters = R.findStarters(rom);
 
   renderCompat(info.platform.id);
   show('shiny');
-  renderRates(); renderShiny(); renderWildStatus();
+  renderRates(); renderShiny(); renderWildStatus(); renderStarters();
 };
 
 
@@ -130,7 +131,9 @@ const activeCount = () => customCount !== null ? customCount : R.SHINY_RATES[rat
 const shinyList = () => R.shinyPatches(shinyHits, activeCount());
 
 function renderShiny() {
-  if (!shinyHits.length) {
+  const has = shinyHits.length > 0;
+  syncExportButtons();
+  if (!has) {
     $('hits').innerHTML = `<div class="msg"><b>Aucun test de shininess trouvé.</b> Normal sur une ROM déjà patchée, un ROM hack, ou un jeu hors génération 3.</div>`;
     return;
   }
@@ -166,53 +169,132 @@ document.querySelectorAll('#modes .chip').forEach(b => b.onclick = () => {
 });
 $('reseed').onclick = () => { $('seed').value = Math.random().toString(36).slice(2, 10); };
 
+function renderStarters() {
+  const box = $('starterstatus');
+  if (!box) return;
+  if (!starters) {
+    box.innerHTML = `<div class="msg"><b>Starters introuvables.</b> La suite d'octets attendue n'apparaît pas dans cette ROM.</div>`;
+    $('dostarters').checked = false; $('dostarters').disabled = true;
+    return;
+  }
+  if (starters.tooMany) {
+    box.innerHTML = `<div class="msg"><b>Repérage ambigu.</b> La suite d'octets des starters apparaît trop souvent
+      pour être identifiée sans risque. Le logiciel refuse d'écrire plutôt que de corrompre la ROM.</div>`;
+    $('dostarters').checked = false; $('dostarters').disabled = true;
+    return;
+  }
+  $('dostarters').disabled = false;
+  box.innerHTML = `<div class="msg good"><b>Starters trouvés</b> — ${starters.label} —
+    à ${starters.offsets.length} endroit${starters.offsets.length > 1 ? 's' : ''}
+    (0x${starters.offsets.map(o => hex(o, 6)).join(', 0x')}). Ils seront remplacés par trois espèces
+    tirées avec la même graine.</div>`;
+}
+
 function renderWildStatus() {
   const ok = table && encounters.length;
   $('wildstatus').innerHTML = ok
     ? `<div class="msg good"><b>${table.count} zones trouvées</b> à partir de 0x${hex(table.start, 6)}, soit ${encounters.length} emplacements de rencontre modifiables (herbe, eau, éclate-roc, pêche).</div>`
-    : `<div class="msg"><b>Table de rencontres introuvable.</b> Le randomizer intégré ne peut pas travailler sur cette ROM. L'onglet « Randomizer avancé » reste utilisable.</div>`;
-  $('gen').disabled = !ok; $('genips').disabled = !ok;
+    : `<div class="msg"><b>Table de rencontres introuvable.</b>
+       <p>Le randomizer intégré ne peut pas travailler sur cette ROM, mais
+       <b>le taux de shiny reste exportable</b> depuis l'onglet précédent, et
+       l'onglet « Randomizer complet » reste utilisable.</p>
+       <p class="dimtxt">Diagnostic : ROM de ${(rom.length / 1048576).toFixed(1)} Mo,
+       code ${R.readHeader(rom).code}, ${shinyHits.length} test(s) de shininess trouvé(s).
+       Communique cette ligne si tu signales le problème.</p></div>`;
+  syncExportButtons();
 }
 
+/* Un seul export pour les deux traitements. Chacun s'applique s'il est
+   disponible : une ROM dont la table de rencontres reste introuvable
+   sort quand meme avec son taux de shiny modifie. */
 function buildPatched() {
   const out = rom.slice();
-  const writes = R.randomizeEncounters(encounters, {
-    mode, seed: $('seed').value || 'race', noDupes: $('nodupes').checked
+
+  const seed = $('seed').value || 'race';
+
+  let writes = [];
+  if (table && encounters.length) {
+    writes = R.randomizeEncounters(encounters, { mode, seed, noDupes: $('nodupes').checked });
+    R.applyEncounters(out, writes);
+  }
+
+  let start = { writes: [], species: [] };
+  if (starters && !starters.tooMany && $('dostarters').checked) {
+    start = R.randomizeStarters(starters, seed);
+    R.applyStarters(out, start.writes);
+  }
+
+  const shiny = shinyList();
+  shiny.forEach(p => out[p.off] = p.value);
+
+  return { out, writes, shiny, start };
+}
+
+const canExport = () => rom && (shinyHits.length || (table && encounters.length) || starters);
+
+function syncExportButtons() {
+  const ok = !!canExport();
+  ['gen', 'genips', 'shinygen', 'shinyips'].forEach(id => { if ($(id)) $(id).disabled = !ok; });
+}
+
+function summary({ writes, shiny, start }) {
+  const parts = [];
+  parts.push(shiny.length
+    ? `taux de shiny : ${shiny.length} octet(s) réécrit(s)`
+    : `taux de shiny : rien à changer`);
+  parts.push(writes.length
+    ? `rencontres sauvages : ${writes.length} emplacement(s) retirés au sort`
+    : `rencontres sauvages : non appliquées (table introuvable)`);
+  if (start && start.species.length) parts.push(`starters : ${start.species.length} espèces remplacées`);
+  return parts.join(' · ');
+}
+
+function reportTo(box, p, info) {
+  $(box).innerHTML = `<div class="msg good"><b>Terminé.</b> ${summary(info)}.
+    <p>Fichier enregistré. Teste-le dans un émulateur avant de lancer la race.</p></div>`;
+  $(box).querySelector('.msg').onclick = () => window.api.reveal(p);
+}
+
+async function exportRom(box) {
+  const info = buildPatched();
+  if (!info.shiny.length && !info.writes.length && !info.start.writes.length) {
+    $(box).innerHTML = `<div class="msg"><b>Rien à écrire.</b> Aucun changement à appliquer sur cette ROM.</div>`;
+    return;
+  }
+  const p = await window.api.saveBytes({
+    data: info.out, defaultName: stem() + '.gba',
+    filters: [{ name: 'ROM GBA', extensions: ['gba'] }]
   });
-  R.applyEncounters(out, writes);
-  if ($('alsoshiny').checked) shinyList().forEach(p => out[p.off] = p.value);
-  return { out, writes };
+  if (p) reportTo(box, p, info);
+}
+
+async function exportIps(box) {
+  const info = buildPatched();
+  if (!info.shiny.length && !info.writes.length && !info.start.writes.length) {
+    $(box).innerHTML = `<div class="msg"><b>Rien à écrire.</b> Aucun changement à appliquer sur cette ROM.</div>`;
+    return;
+  }
+  const p = await window.api.saveBytes({
+    data: R.buildIPS(rom, info.out), defaultName: stem() + '.ips',
+    filters: [{ name: 'Patch IPS', extensions: ['ips'] }]
+  });
+  if (p) reportTo(box, p, info);
 }
 
 const rateLabel = () => customCount !== null
   ? '1-' + Math.round(65536 / customCount)
   : R.SHINY_RATES[rateIdx].label.replace('/', '-');
-const stem = () => romName.replace(/\.[^.]+$/, '') +
-  ` [${$('seed').value}${$('alsoshiny').checked ? ' ' + rateLabel() : ''}]`;
-
-$('gen').onclick = async () => {
-  const { out, writes } = buildPatched();
-  const p = await window.api.saveBytes({
-    data: out, defaultName: stem() + '.gba',
-    filters: [{ name: 'ROM GBA', extensions: ['gba'] }]
-  });
-  if (p) done(p, writes.length);
+const stem = () => {
+  const bits = [];
+  if (shinyHits.length) bits.push(rateLabel());
+  if (table && encounters.length) bits.push($('seed').value || 'race');
+  return romName.replace(/\.[^.]+$/, '') + (bits.length ? ` [${bits.join(' ')}]` : ' [patch]');
 };
 
-$('genips').onclick = async () => {
-  const { out, writes } = buildPatched();
-  const ips = R.buildIPS(rom, out);
-  const p = await window.api.saveBytes({
-    data: ips, defaultName: stem() + '.ips',
-    filters: [{ name: 'Patch IPS', extensions: ['ips'] }]
-  });
-  if (p) done(p, writes.length);
-};
-
-function done(p, n) {
-  $('wildout').innerHTML = `<div class="msg good"><b>Terminé.</b> ${n} rencontres réécrites. Fichier enregistré. Teste-le dans un émulateur avant de lancer la race.</div>`;
-  $('wildout').querySelector('.msg').onclick = () => window.api.reveal(p);
-}
+$('gen').onclick      = () => exportRom('wildout');
+$('genips').onclick   = () => exportIps('wildout');
+$('shinygen').onclick = () => exportRom('shinyout');
+$('shinyips').onclick = () => exportIps('shinyout');
 
 /* --------------------- randomizer complet ---------------------- */
 let presets = [];
@@ -295,6 +377,7 @@ $('runupr').onclick = async () => {
 };
 
 window.addEventListener('DOMContentLoaded', refreshSetup);
+
 
 
 /* cablage du taux libre (ici et pas en ligne dans le HTML : la politique
