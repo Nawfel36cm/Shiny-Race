@@ -192,10 +192,16 @@ function renderStarters() {
     return;
   }
   $('dostarters').disabled = false;
-  box.innerHTML = `<div class="msg good"><b>Starters trouvés</b> — ${starters.code} · ${starters.label} —
-    à ${starters.offsets.length} endroit${starters.offsets.length > 1 ? 's' : ''}
-    (0x${starters.offsets.map(o => hex(o, 6)).join(', 0x')}). Ils seront remplacés par trois espèces
-    tirées avec la même graine.</div>`;
+  if (starters.kind === 'script') {
+    box.innerHTML = `<div class="msg good"><b>Starters trouvés</b> — ${starters.code} · ${starters.label}
+      — ${starters.blocks.length} Pokéball${starters.blocks.length > 1 ? 's' : ''} dans le labo.
+      <p>Le Pokémon du rival est remplacé en même temps, en gardant le cycle d'origine :
+      il prend toujours celui qui bat le tien.</p></div>`;
+  } else {
+    box.innerHTML = `<div class="msg good"><b>Starters trouvés</b> — ${starters.code} · ${starters.label}
+      — table à ${starters.offsets.length} endroit${starters.offsets.length > 1 ? 's' : ''}
+      (0x${starters.offsets.map(o => hex(o, 6)).join(', 0x')}).</div>`;
+  }
 }
 
 function renderWildStatus() {
@@ -254,7 +260,7 @@ function summary({ writes, shiny, start }) {
   parts.push(writes.length
     ? `rencontres sauvages : ${writes.length} emplacement(s) retirés au sort`
     : `rencontres sauvages : non appliquées (table introuvable)`);
-  if (start && start.species.length) parts.push(`starters : ${start.species.length} espèces remplacées`);
+  if (start && start.species.length) parts.push(`starters : ${start.species.length} espèces remplacées (${start.writes.length} écriture(s))`);
   return parts.join(' · ');
 }
 

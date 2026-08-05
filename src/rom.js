@@ -228,57 +228,89 @@ function randomizeEncounters(list, { mode = 'global', seed = 'race', noDupes = t
 /* ---------------------------------------------------------------- *
  *  Starters                                                        *
  *                                                                  *
- *  Les trois especes de depart sont stockees cote a cote, en u16,   *
- *  dans les indices internes de la generation 3. On les repere par  *
- *  leur suite d'octets plutot que par une adresse : le meme code    *
- *  marche sur toutes les versions et toutes les langues.            *
+ *  Rouge Feu / Vert Feuille ne stockent pas les starters dans une   *
+ *  table : chaque Pokeball du labo porte son propre bloc de script, *
+ *  quatre `setvar` consecutifs de cinq octets chacun.               *
+ *                                                                  *
+ *      16 01 40 <ball>   00   numero de la ball (0, 1, 2)          *
+ *      16 02 40 <espece> 00   celle que le joueur recoit           *
+ *      16 03 40 <espece> 00   celle que prend le rival             *
+ *      16 04 40 <objet>  00   identifiant d'objet, non touche      *
+ *                                                                  *
+ *  Le rival prend toujours celle qui bat la tienne. On preserve ce  *
+ *  cycle en remappant les trois especes plutot qu'en tirant six     *
+ *  valeurs independantes.                                          *
+ *                                                                  *
+ *  Rubis / Saphir / Emeraude utilisent un vrai tableau u16 contigu. *
  * ---------------------------------------------------------------- */
 const STARTER_SETS = [
   { id: 'rse',  label: 'Arcko, Poussifeu, Gobou',         species: [277, 280, 283],
-    codes: ['AXV', 'AXP', 'BPE'] },
+    codes: ['AXV', 'AXP', 'BPE'], kind: 'table' },
   { id: 'frlg', label: 'Bulbizarre, Salameche, Carapuce', species: [1, 4, 7],
-    codes: ['BPR', 'BPG'] }
+    codes: ['BPR', 'BPG'], kind: 'script' }
 ];
 
-/* Au-dela de ce nombre d'occurrences, la suite d'octets est trop banale
-   pour etre la table des starters : on refuse plutot que de corrompre. */
 const STARTER_MAX_HITS = 12;
 
-/* Le jeu est identifie par son code d'en-tete, pas en essayant les
-   signatures a l'aveugle : sur une ROM Rouge Feu, les six octets des
-   starters d'Emeraude peuvent apparaitre par hasard, et on patcherait
-   alors du remplissage au lieu de la vraie table. */
+/* --- Rouge Feu / Vert Feuille : blocs de script --- */
+function findStarterScripts(b, set) {
+  const orig = new Set(set.species);
+  const blocks = [];
+  for (let i = 0; i + 20 < b.length; i++) {
+    if (b[i] !== 0x16 || b[i+1] !== 0x01 || b[i+2] !== 0x40 || b[i+4] !== 0x00) continue;
+    if (b[i+5] !== 0x16 || b[i+6] !== 0x02 || b[i+7] !== 0x40) continue;
+    if (b[i+10] !== 0x16 || b[i+11] !== 0x03 || b[i+12] !== 0x40) continue;
+    if (b[i+15] !== 0x16 || b[i+16] !== 0x04 || b[i+17] !== 0x40) continue;
+    const ball = b[i+3];
+    const you  = b[i+8]  | b[i+9]  << 8;
+    const riv  = b[i+13] | b[i+14] << 8;
+    if (ball > 2 || you === riv) continue;
+    if (!orig.has(you) || !orig.has(riv)) continue;
+    blocks.push({ off: i, ball, youOff: i + 8, rivalOff: i + 13, you, rival: riv });
+    if (blocks.length > STARTER_MAX_HITS) break;
+  }
+  return blocks;
+}
+
+/* --- Rubis / Saphir / Emeraude : tableau contigu --- */
+function findStarterTable(b, set) {
+  const pat = [];
+  for (const sp of set.species) pat.push(sp & 0xFF, sp >> 8 & 0xFF);
+  const offs = [];
+  for (let i = 0; i + pat.length <= b.length; i += 2) {
+    let ok = true;
+    for (let k = 0; k < pat.length; k++) if (b[i + k] !== pat[k]) { ok = false; break; }
+    if (ok) offs.push(i);
+    if (offs.length > STARTER_MAX_HITS) break;
+  }
+  return offs;
+}
+
 function findStarters(b, code) {
   /* L'en-tete porte quatre caracteres : trois pour le jeu, un pour la
-     langue (BPRE, BPRF, BPRD...). On ne compare que les trois premiers,
-     pour couvrir toutes les langues d'un meme jeu. */
+     langue (BPRE, BPRF, BPRD...). On ne compare que les trois premiers. */
   const key = String(code || '').slice(0, 3).toUpperCase();
-  const wanted = key ? STARTER_SETS.filter(x => x.codes.includes(key)) : [];
-  const list = wanted.length ? wanted : STARTER_SETS;
-  let lastTried = null;
+  const set = STARTER_SETS.find(x => x.codes.includes(key));
+  if (!set) return null;
 
-  for (const set of list) {
-    const pat = [];
-    for (const sp of set.species) pat.push(sp & 0xFF, sp >> 8 & 0xFF);
-
-    const offs = [];
-    for (let i = 0; i + pat.length <= b.length; i += 2) {
-      let ok = true;
-      for (let k = 0; k < pat.length; k++) if (b[i + k] !== pat[k]) { ok = false; break; }
-      if (ok) offs.push(i);
-      if (offs.length > STARTER_MAX_HITS) break;
-    }
-    if (!offs.length) { lastTried = set; continue; }
+  if (set.kind === 'script') {
+    const blocks = findStarterScripts(b, set);
+    if (!blocks.length) return { missing: true, label: set.label, code: key };
     return {
-      set: set.id,
-      code: code || '?',
-      label: set.label,
-      species: set.species.slice(),
-      offsets: offs,
-      tooMany: offs.length > STARTER_MAX_HITS
+      set: set.id, kind: 'script', code: key, label: set.label,
+      species: set.species.slice(), blocks,
+      offsets: blocks.map(x => x.youOff),
+      tooMany: blocks.length > STARTER_MAX_HITS
     };
   }
-  return lastTried ? { missing: true, label: lastTried.label, code: code || '?' } : null;
+
+  const offs = findStarterTable(b, set);
+  if (!offs.length) return { missing: true, label: set.label, code: key };
+  return {
+    set: set.id, kind: 'table', code: key, label: set.label,
+    species: set.species.slice(), offsets: offs,
+    tooMany: offs.length > STARTER_MAX_HITS
+  };
 }
 
 /** Tire trois especes distinctes et rend les octets a ecrire. */
@@ -291,11 +323,22 @@ function randomizeStarters(found, seed) {
     const sp = VALID_SPECIES[Math.floor(rand() * VALID_SPECIES.length)];
     if (!picked.includes(sp)) picked.push(sp);
   }
+
   const writes = [];
-  for (const off of found.offsets) {
-    picked.forEach((sp, k) => {
-      writes.push({ off: off + k * 2, lo: sp & 0xFF, hi: sp >> 8 & 0xFF, species: sp });
-    });
+  const put = (off, sp) => writes.push({ off, lo: sp & 0xFF, hi: sp >> 8 & 0xFF, species: sp });
+
+  if (found.kind === 'script') {
+    /* Correspondance ancienne espece -> nouvelle, appliquee aux deux
+       champs : le cycle « le rival prend celle qui bat la tienne »
+       reste intact. */
+    const map = new Map();
+    found.species.forEach((sp, k) => map.set(sp, picked[k]));
+    for (const blk of found.blocks) {
+      put(blk.youOff,   map.get(blk.you));
+      put(blk.rivalOff, map.get(blk.rival));
+    }
+  } else {
+    for (const off of found.offsets) picked.forEach((sp, k) => put(off + k * 2, sp));
   }
   return { writes, species: picked };
 }
