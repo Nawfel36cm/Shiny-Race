@@ -556,7 +556,17 @@ $('diagcopy').onclick = async () => {
            <div class="acts"><button class="btn primary" id="updnow">Redemarrer et installer</button></div>`, 'good');
       document.getElementById('updnow').onclick = () => window.api.update.install();
     }
-    if (msg.state === 'error')      say('<b>Verification impossible.</b> ' + (msg.message || ''));
+    if (msg.state === 'error') {
+      const m = String(msg.message || '');
+      /* Un depot sans Release n'est pas une panne : c'est l'etat normal
+         tant que la premiere n'a pas ete publiee. Le dire clairement. */
+      if (/no published versions|404|Not Found/i.test(m)) {
+        say("<b>Aucune version publiée sur le dépôt.</b> C'est normal tant qu'aucune Release n'a été"
+          + " créée sur GitHub. La connexion, elle, fonctionne : l'application a bien interrogé le dépôt.");
+      } else {
+        say('<b>Vérification impossible.</b> ' + m);
+      }
+    }
     if (msg.state === 'portable')   say("Cette copie est la version portable : elle ne se met pas a jour toute seule. Retelecharge la derniere version quand tu veux.");
     btn.disabled = msg.state === 'checking' || msg.state === 'progress';
   });

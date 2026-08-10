@@ -378,25 +378,50 @@ const KIT_DEFAULT = [
 
 const KIT_MAX_SITES = 8;
 
-/* Le don du professeur est toujours de cinq Poke Balls, et les scripts
-   d'une ROM gen 3 vivent tous sous les 6 Mo. Sans ces deux bornes, la
-   suite 44 04 00 qq 00 se retrouve par hasard dans les donnees
-   graphiques : un patch a cet endroit corrompt la ROM en silence. */
+/* Le don du professeur prend deux formes selon le jeu.
+
+   Rouge Feu / Vert Feuille — un additem direct, 5 octets :
+       44 04 00 05 00        additem Poke Ball, 5
+
+   Rubis / Saphir / Emeraude — un giveitem_std, 12 octets :
+       1A 00 80 04 00        setorcopyvar 0x8000, 4   (objet)
+       1A 01 80 05 00        setorcopyvar 0x8001, 5   (quantite)
+       09 00                 callstd 0                (donne et affiche)
+
+   Dans les deux cas on remplace le bloc par un `call` de 5 octets vers
+   notre script, complete au besoin par des `nop` (0x00) pour occuper la
+   place exacte. Aucun octet n'est decale.
+
+   Bornes indispensables : quantite exactement 5, et scripts sous les
+   6 Mo. Sans elles, la suite d'octets se retrouve par hasard dans les
+   donnees graphiques et le patch corrompt la ROM. */
 const GIFT_QTY = 5;
 const SCRIPT_AREA_END = 0x600000;
 
 function findBallGift(b) {
   const sites = [];
   const end = Math.min(b.length, SCRIPT_AREA_END);
-  for (let i = 0; i + 5 <= end; i++) {
-    if (b[i] !== 0x44) continue;
-    if (b[i+1] !== BALL_ITEMS.poke || b[i+2] !== 0x00) continue;
-    if (b[i+3] !== GIFT_QTY || b[i+4] !== 0x00) continue;
-    sites.push({ off: i, qty: GIFT_QTY });
+
+  for (let i = 0; i + 12 <= end; i++) {
+    /* forme additem (FRLG) */
+    if (b[i] === 0x44 && b[i+1] === BALL_ITEMS.poke && b[i+2] === 0x00
+        && b[i+3] === GIFT_QTY && b[i+4] === 0x00) {
+      sites.push({ off: i, len: 5, kind: 'additem' });
+      continue;
+    }
+    /* forme giveitem_std (RSE) */
+    if (b[i] === 0x1A && b[i+1] === 0x00 && b[i+2] === 0x80
+        && b[i+3] === BALL_ITEMS.poke && b[i+4] === 0x00
+        && b[i+5] === 0x1A && b[i+6] === 0x01 && b[i+7] === 0x80
+        && b[i+8] === GIFT_QTY && b[i+9] === 0x00
+        && b[i+10] === 0x09) {
+      sites.push({ off: i, len: 12, kind: 'std' });
+    }
     if (sites.length > KIT_MAX_SITES) break;
   }
   if (!sites.length) return null;
-  return { sites, tooMany: sites.length > KIT_MAX_SITES };
+  return { sites, tooMany: sites.length > KIT_MAX_SITES,
+           kinds: [...new Set(sites.map(x => x.kind))] };
 }
 
 /* On retient la PLUS GRANDE plage de 0xFF, pas la premiere venue : une
@@ -440,11 +465,14 @@ function buildStarterKit(b, gift, kit = KIT_DEFAULT) {
   const ptr = (0x08000000 + off) >>> 0;
   const writes = script.map((v, k) => ({ off: off + k, value: v }));
   for (const s of gift.sites) {
-    writes.push({ off: s.off,     value: 0x04 });
+    writes.push({ off: s.off,     value: 0x04 });          // call
     writes.push({ off: s.off + 1, value: ptr        & 0xFF });
     writes.push({ off: s.off + 2, value: ptr >>>  8 & 0xFF });
     writes.push({ off: s.off + 3, value: ptr >>> 16 & 0xFF });
     writes.push({ off: s.off + 4, value: ptr >>> 24 & 0xFF });
+    /* le bloc d'origine peut etre plus long que 5 octets : on comble
+       le reste de `nop` pour ne rien decaler */
+    for (let k = 5; k < s.len; k++) writes.push({ off: s.off + k, value: 0x00 });
   }
   return { writes, script, scriptOff: off, ptr, sites: gift.sites, items: clean };
 }
