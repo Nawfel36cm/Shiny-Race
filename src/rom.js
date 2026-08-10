@@ -68,9 +68,15 @@ function findShinyChecks(b) {
   for (let i = 0; i < b.length - 6; i += 2) {
     const op = b[i + 1];
     if (op < 0x28 || op > 0x2F) continue;              // cmp Rd, #imm8
+    /* Le compilateur produit indifferemment l'une ou l'autre forme :
+         cmp #7 / bhi ailleurs      le saut evite le cas shiny
+         cmp #7 / bls .shiny        le saut mene au cas shiny
+       Les deux testent la meme chose. Rouge Feu utilise `bls`, et ne
+       reconnaitre que `bhi` faisait manquer les quatre occurrences. */
     let form = null;
-    if (b[i] === 0x07 && b[i + 3] === 0xD8) form = 'le';       // shiny si <= 7
-    else if (b[i] === 0x08 && b[i + 3] === 0xD2) form = 'lt';  // shiny si <  8
+    const br = b[i + 3];
+    if (b[i] === 0x07 && (br === 0xD8 || br === 0xD9)) form = 'le';       // shiny si <= 7
+    else if (b[i] === 0x08 && (br === 0xD2 || br === 0xD3)) form = 'lt';  // shiny si <  8
     if (!form) continue;
 
     let eor = 0, lsr = 0;
@@ -79,7 +85,8 @@ function findShinyChecks(b) {
       if (b[j + 1] === 0x0C) lsr++;                                  // LSR Rd,Rm,#16
     }
     if (eor < 2) continue;
-    out.push({ off: i, reg: op - 0x28, form, old: b[i], conf: lsr ? 'forte' : 'moyenne' });
+    out.push({ off: i, reg: op - 0x28, form, old: b[i], branch: br,
+      conf: (lsr >= 2 && eor >= 3) ? 'forte' : 'moyenne' });
   }
   return out;
 }
