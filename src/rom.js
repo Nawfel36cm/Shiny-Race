@@ -347,6 +347,105 @@ function applyStarters(rom, writes) {
   for (const w of writes) { rom[w.off] = w.lo; rom[w.off + 1] = w.hi; }
 }
 
+/* ---------------------------------------------------------------- *
+ *  Dotation de depart                                              *
+ *                                                                  *
+ *  Le jeu ne prevoit aucun stock initial : le professeur offre      *
+ *  cinq Poke Balls, et c'est tout. Pour en donner davantage il      *
+ *  faut ajouter du code, pas seulement reecrire une constante.      *
+ *                                                                  *
+ *  L'astuce tient a une coincidence de taille : la commande         *
+ *      giveitem <objet u16> <quantite u16>     fait 5 octets        *
+ *      call     <pointeur u32>                 fait 5 octets        *
+ *  On remplace donc le don d'origine par un appel vers un script    *
+ *  ecrit dans l'espace libre de la ROM. Aucun octet n'est decale,   *
+ *  aucun pointeur existant n'est invalide.                          *
+ * ---------------------------------------------------------------- */
+const BALL_ITEMS = { master: 1, ultra: 2, great: 3, poke: 4 };
+const KIT_DEFAULT = [
+  { item: BALL_ITEMS.poke,   qty: 200, label: 'Poké Ball' },
+  { item: BALL_ITEMS.great,  qty: 150, label: 'Super Ball' },
+  { item: BALL_ITEMS.ultra,  qty: 100, label: 'Hyper Ball' },
+  { item: BALL_ITEMS.master, qty: 1,   label: 'Master Ball' }
+];
+
+const KIT_MAX_SITES = 8;
+
+/* Le don du professeur est toujours de cinq Poke Balls, et les scripts
+   d'une ROM gen 3 vivent tous sous les 6 Mo. Sans ces deux bornes, la
+   suite 44 04 00 qq 00 se retrouve par hasard dans les donnees
+   graphiques : un patch a cet endroit corrompt la ROM en silence. */
+const GIFT_QTY = 5;
+const SCRIPT_AREA_END = 0x600000;
+
+function findBallGift(b) {
+  const sites = [];
+  const end = Math.min(b.length, SCRIPT_AREA_END);
+  for (let i = 0; i + 5 <= end; i++) {
+    if (b[i] !== 0x44) continue;
+    if (b[i+1] !== BALL_ITEMS.poke || b[i+2] !== 0x00) continue;
+    if (b[i+3] !== GIFT_QTY || b[i+4] !== 0x00) continue;
+    sites.push({ off: i, qty: GIFT_QTY });
+    if (sites.length > KIT_MAX_SITES) break;
+  }
+  if (!sites.length) return null;
+  return { sites, tooMany: sites.length > KIT_MAX_SITES };
+}
+
+/* On retient la PLUS GRANDE plage de 0xFF, pas la premiere venue : une
+   petite poche de remplissage au milieu des donnees pourrait servir a
+   autre chose, alors que la longue trainee de fin de ROM est de
+   l'espace vierge sans ambiguite. */
+function findFreeSpace(b, need, from = 0) {
+  let run = 0, start = -1, best = 0, bestStart = -1;
+  for (let i = from; i < b.length; i++) {
+    if (b[i] === 0xFF) {
+      if (run === 0) start = i;
+      run++;
+      if (run > best) { best = run; bestStart = start; }
+    } else run = 0;
+  }
+  if (bestStart < 0 || best < need + 32) return -1;
+  const aligned = (bestStart + 3) & ~3;
+  return aligned + need <= b.length ? aligned : -1;
+}
+
+/**
+ * Rend les octets a ecrire pour la dotation.
+ * `kit` : [{ item, qty }] — quantites bornees a 1..999 (limite d'un slot).
+ */
+function buildStarterKit(b, gift, kit = KIT_DEFAULT) {
+  if (!gift || gift.tooMany) return { writes: [], script: [], scriptOff: -1, sites: [] };
+
+  const clean = kit.filter(x => x.qty > 0)
+                   .map(x => ({ item: x.item, qty: Math.min(999, Math.max(1, x.qty | 0)) }));
+  if (!clean.length) return { writes: [], script: [], scriptOff: -1, sites: [] };
+
+  const script = [];
+  for (const it of clean) {
+    script.push(0x44, it.item & 0xFF, it.item >> 8 & 0xFF, it.qty & 0xFF, it.qty >> 8 & 0xFF);
+  }
+  script.push(0x03);                                   // return
+
+  const off = findFreeSpace(b, script.length);
+  if (off < 0) return { writes: [], script: [], scriptOff: -1, sites: [], noSpace: true };
+
+  const ptr = (0x08000000 + off) >>> 0;
+  const writes = script.map((v, k) => ({ off: off + k, value: v }));
+  for (const s of gift.sites) {
+    writes.push({ off: s.off,     value: 0x04 });
+    writes.push({ off: s.off + 1, value: ptr        & 0xFF });
+    writes.push({ off: s.off + 2, value: ptr >>>  8 & 0xFF });
+    writes.push({ off: s.off + 3, value: ptr >>> 16 & 0xFF });
+    writes.push({ off: s.off + 4, value: ptr >>> 24 & 0xFF });
+  }
+  return { writes, script, scriptOff: off, ptr, sites: gift.sites, items: clean };
+}
+
+function applyBytes(rom, writes) {
+  for (const w of writes) rom[w.off] = w.value;
+}
+
 function applyEncounters(rom, writes) {
   for (const w of writes) {
     rom[w.off + 2] = w.species & 0xFF;
@@ -388,5 +487,6 @@ window.ROM = {
   readHeader, findShinyChecks, shinyPatches,
   findEncounterTable, readEncounters, randomizeEncounters, applyEncounters,
   findStarters, randomizeStarters, applyStarters, STARTER_SETS,
+  findBallGift, buildStarterKit, applyBytes, findFreeSpace, KIT_DEFAULT, BALL_ITEMS,
   rng, buildIPS, sha1
 };

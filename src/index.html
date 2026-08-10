@@ -95,6 +95,23 @@
   </div>
 
   <div class="field">
+    <label>Dotation de départ</label>
+    <div id="kitstatus"></div>
+    <div class="row" style="gap:14px;margin-bottom:10px">
+      <span class="pill dim">Poké Ball</span><input type="text" id="kpoke" value="200" style="min-width:80px">
+      <span class="pill dim">Super Ball</span><input type="text" id="kgreat" value="150" style="min-width:80px">
+    </div>
+    <div class="row" style="gap:14px">
+      <span class="pill dim">Hyper Ball</span><input type="text" id="kultra" value="100" style="min-width:80px">
+      <span class="pill dim">Master Ball</span><input type="text" id="kmaster" value="1" style="min-width:80px">
+    </div>
+    <label class="check" style="margin-top:12px"><input type="checkbox" id="dokit" checked> Remplacer le don du professeur par cette dotation</label>
+    <p class="note">Maximum 999 par objet, limite d'un emplacement de sac. Mettre 0 retire l'objet
+    de la dotation. Le message affiché à l'écran continuera d'annoncer cinq Poké Balls : seul le texte
+    d'origine subsiste, les objets réellement reçus sont bien ceux-ci.</p>
+  </div>
+
+  <div class="field">
     <label>Légendaires, dresseurs, échanges, cadeaux</label>
     <p class="note">Ces Pokémon ne vivent pas dans une table mais dispersés dans les scripts de map.
     Les randomiser demande la base d'offsets de l'Universal Pokémon Randomizer ZX — utilise l'onglet
@@ -133,6 +150,18 @@
 
 <section class="pane" id="pane-compat" hidden>
   <div id="compat"></div>
+</section>
+
+<section class="field" id="diagsection">
+  <label>Diagnostic</label>
+  <div class="row">
+    <button class="btn ghost" id="diagbtn">Montrer ce qui sera écrit</button>
+    <button class="btn ghost small" id="diagcopy">Copier</button>
+  </div>
+  <pre class="log" id="diagout" style="display:none"></pre>
+  <p class="note">Construit la ROM en mémoire puis <b>relit</b> les octets aux adresses visées.
+  Un rapport qui annonce une écriture sans la relire ne prouve rien : ici tu vois ce que la ROM
+  contient vraiment.</p>
 </section>
 
 <section class="field" id="updsection">

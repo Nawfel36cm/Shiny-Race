@@ -6,7 +6,7 @@ const hex = (n, p = 2) => n.toString(16).toUpperCase().padStart(p, '0');
 
 let rom = null, romPath = '', romName = '';
 let shinyHits = [], rateIdx = 5, customCount = null;
-let table = null, encounters = [], mode = 'global', starters = null;
+let table = null, encounters = [], mode = 'global', starters = null, ballGift = null;
 let jar = null, settings = null;
 
 /* ------------------------- ouverture ------------------------- */
@@ -42,10 +42,11 @@ $('open').onclick = async () => {
   table = R.findEncounterTable(rom);
   encounters = table ? R.readEncounters(rom, table) : [];
   starters = R.findStarters(rom, h.code);
+  ballGift = R.findBallGift(rom);
 
   renderCompat(info.platform.id);
   show('shiny');
-  renderRates(); renderShiny(); renderWildStatus(); renderStarters();
+  renderRates(); renderShiny(); renderWildStatus(); renderStarters(); renderKit();
 };
 
 
@@ -169,6 +170,39 @@ document.querySelectorAll('#modes .chip').forEach(b => b.onclick = () => {
 });
 $('reseed').onclick = () => { $('seed').value = Math.random().toString(36).slice(2, 10); };
 
+const KIT_FIELDS = [
+  { id: 'kpoke',   item: 4, label: 'Poké Ball',   def: 200 },
+  { id: 'kgreat',  item: 3, label: 'Super Ball',  def: 150 },
+  { id: 'kultra',  item: 2, label: 'Hyper Ball',  def: 100 },
+  { id: 'kmaster', item: 1, label: 'Master Ball', def: 1   }
+];
+
+const readKit = () => KIT_FIELDS
+  .map(f => ({ item: f.item, qty: Math.min(999, Math.max(0, parseInt($(f.id).value, 10) || 0)) }))
+  .filter(x => x.qty > 0);
+
+function renderKit() {
+  const box = $('kitstatus');
+  if (!box) return;
+  if (!ballGift) {
+    box.innerHTML = `<div class="msg"><b>Point d'accroche introuvable.</b> Le don de cinq Poké Balls
+      du professeur n'a pas été repéré dans cette ROM, donc la dotation ne peut pas être injectée.</div>`;
+    $('dokit').checked = false; $('dokit').disabled = true;
+    return;
+  }
+  if (ballGift.tooMany) {
+    box.innerHTML = `<div class="msg"><b>Repérage ambigu.</b> Trop de points d'accroche candidats :
+      le logiciel refuse d'écrire plutôt que de risquer une ROM corrompue.</div>`;
+    $('dokit').checked = false; $('dokit').disabled = true;
+    return;
+  }
+  $('dokit').disabled = false;
+  box.innerHTML = `<div class="msg good"><b>Point d'accroche trouvé</b> —
+    ${ballGift.sites.length} occurrence${ballGift.sites.length > 1 ? 's' : ''} du don du professeur
+    (0x${ballGift.sites.map(x => hex(x.off, 6)).join(', 0x')}). Le don d'origine sera remplacé par un
+    appel vers un script écrit dans l'espace libre de la ROM.</div>`;
+}
+
 function renderStarters() {
   const box = $('starterstatus');
   if (!box) return;
@@ -232,6 +266,12 @@ function buildPatched() {
     R.applyEncounters(out, writes);
   }
 
+  let kit = { writes: [], items: [] };
+  if (ballGift && !ballGift.tooMany && $('dokit').checked) {
+    kit = R.buildStarterKit(out, ballGift, readKit());
+    R.applyBytes(out, kit.writes);
+  }
+
   let start = { writes: [], species: [] };
   if (starters && !starters.tooMany && !starters.missing && $('dostarters').checked) {
     start = R.randomizeStarters(starters, seed);
@@ -241,18 +281,18 @@ function buildPatched() {
   const shiny = shinyList();
   shiny.forEach(p => out[p.off] = p.value);
 
-  return { out, writes, shiny, start };
+  return { out, writes, shiny, start, kit };
 }
 
 const canExport = () => rom && (shinyHits.length || (table && encounters.length)
-  || (starters && !starters.missing && !starters.tooMany));
+  || (starters && !starters.missing && !starters.tooMany) || ballGift);
 
 function syncExportButtons() {
   const ok = !!canExport();
   ['gen', 'genips', 'shinygen', 'shinyips'].forEach(id => { if ($(id)) $(id).disabled = !ok; });
 }
 
-function summary({ writes, shiny, start }) {
+function summary({ writes, shiny, start, kit }) {
   const parts = [];
   parts.push(shiny.length
     ? `taux de shiny : ${shiny.length} octet(s) réécrit(s)`
@@ -261,6 +301,8 @@ function summary({ writes, shiny, start }) {
     ? `rencontres sauvages : ${writes.length} emplacement(s) retirés au sort`
     : `rencontres sauvages : non appliquées (table introuvable)`);
   if (start && start.species.length) parts.push(`starters : ${start.species.length} espèces remplacées (${start.writes.length} écriture(s))`);
+  if (kit && kit.items && kit.items.length)
+    parts.push(`dotation : ${kit.items.length} objets ajoutés`);
   return parts.join(' · ');
 }
 
@@ -272,7 +314,7 @@ function reportTo(box, p, info) {
 
 async function exportRom(box) {
   const info = buildPatched();
-  if (!info.shiny.length && !info.writes.length && !info.start.writes.length) {
+  if (!info.shiny.length && !info.writes.length && !info.start.writes.length && !info.kit.writes.length) {
     $(box).innerHTML = `<div class="msg"><b>Rien à écrire.</b> Aucun changement à appliquer sur cette ROM.</div>`;
     return;
   }
@@ -285,7 +327,7 @@ async function exportRom(box) {
 
 async function exportIps(box) {
   const info = buildPatched();
-  if (!info.shiny.length && !info.writes.length && !info.start.writes.length) {
+  if (!info.shiny.length && !info.writes.length && !info.start.writes.length && !info.kit.writes.length) {
     $(box).innerHTML = `<div class="msg"><b>Rien à écrire.</b> Aucun changement à appliquer sur cette ROM.</div>`;
     return;
   }
@@ -400,6 +442,102 @@ window.addEventListener('DOMContentLoaded', refreshSetup);
 $('applyrate').onclick = applyCustomRate;
 $('customrate').addEventListener('keydown', e => { if (e.key === 'Enter') applyCustomRate(); });
 
+
+/* ---------------------- diagnostic ----------------------------- *
+ * Construit la ROM patchee en memoire, puis RELIT les octets aux
+ * adresses visees. Un rapport qui dit « ecrit » sans relire ne
+ * prouve rien : ici on affiche ce que la ROM contient vraiment.   */
+function diagnostic() {
+  if (!rom) return 'Aucune ROM chargee.';
+  const L = [];
+  const h = R.readHeader(rom);
+  L.push('=== SHINY RACE STUDIO — DIAGNOSTIC ===');
+  L.push('version appli : ' + (window.__ver || '?'));
+  L.push(`ROM : ${h.title} · ${h.code} · ${(h.size/1048576).toFixed(0)} Mo · v1.${h.version}`);
+  L.push('');
+
+  L.push('--- ce qui a ete repere ---');
+  L.push(`tests de shininess : ${shinyHits.length}`);
+  L.push(`table de rencontres : ${table ? table.count + ' zones' : 'INTROUVABLE'}`);
+  L.push(`starters : ${!starters ? 'jeu non reconnu'
+    : starters.missing ? 'INTROUVABLES'
+    : starters.kind === 'script' ? starters.blocks.length + ' blocs de script'
+    : starters.offsets.length + ' adresses de table'}`);
+  L.push(`dotation : ${!ballGift ? 'point d\'accroche INTROUVABLE'
+    : ballGift.sites.length + ' site(s) a 0x' + ballGift.sites.map(x => hex(x.off, 6)).join(', 0x')}`);
+  L.push('');
+
+  L.push('--- cases cochees ---');
+  L.push(`randomiser les starters : ${$('dostarters').checked ? 'OUI' : 'NON'}` +
+         ($('dostarters').disabled ? ' (case desactivee)' : ''));
+  L.push(`appliquer la dotation   : ${$('dokit').checked ? 'OUI' : 'NON'}` +
+         ($('dokit').disabled ? ' (case desactivee)' : ''));
+  L.push(`quantites demandees     : ` + readKit().map(x => x.item + '×' + x.qty).join(', '));
+  L.push('');
+
+  const info = buildPatched();
+  L.push('--- ecritures calculees ---');
+  L.push(`taux de shiny : ${info.shiny.length} octet(s)`);
+  L.push(`rencontres    : ${info.writes.length} emplacement(s)`);
+  L.push(`starters      : ${info.start.writes.length} octet(s)`);
+  L.push(`dotation      : ${info.kit.writes.length} octet(s)` +
+         (info.kit.noSpace ? '  <-- AUCUN ESPACE LIBRE TROUVE' : ''));
+  L.push('');
+
+  L.push('--- relecture de la ROM patchee ---');
+  if (ballGift && info.kit.writes.length) {
+    for (const site of ballGift.sites) {
+      const op = info.out[site.off];
+      const ptr = (info.out[site.off+1] | info.out[site.off+2] << 8
+                 | info.out[site.off+3] << 16 | info.out[site.off+4] << 24) >>> 0;
+      L.push(`  0x${hex(site.off,6)} : opcode 0x${hex(op,2)} ${op === 0x04 ? '(call)' : '(ATTENDU 0x04)'}`
+           + ` -> 0x${hex(ptr,8)}`);
+    }
+    let o = info.kit.scriptOff;
+    L.push(`  script injecte a 0x${hex(o,6)} :`);
+    let n = 0;
+    while (info.out[o] === 0x44 && n++ < 12) {
+      const it = info.out[o+1] | info.out[o+2] << 8;
+      const q  = info.out[o+3] | info.out[o+4] << 8;
+      L.push(`     objet ${it} x${q}`);
+      o += 5;
+    }
+    L.push(`     fin de script : 0x${hex(info.out[o],2)} ${info.out[o] === 0x03 ? '(return)' : '(ATTENDU 0x03)'}`);
+  } else {
+    L.push('  dotation non appliquee, rien a relire');
+  }
+
+  if (starters && info.start.writes.length && starters.kind === 'script') {
+    L.push('  starters relus :');
+    for (const bl of starters.blocks) {
+      const you = info.out[bl.youOff]   | info.out[bl.youOff+1]   << 8;
+      const riv = info.out[bl.rivalOff] | info.out[bl.rivalOff+1] << 8;
+      L.push(`     ball ${bl.ball} : toi=${you} rival=${riv}` +
+             (you === bl.you ? '   <-- INCHANGE' : ''));
+    }
+  }
+
+  let diff = 0;
+  for (let i = 0; i < rom.length; i++) if (rom[i] !== info.out[i]) diff++;
+  L.push('');
+  L.push(`total : ${diff} octet(s) different(s) de la ROM d'origine`);
+  return L.join('\n');
+}
+
+$('diagbtn').onclick = () => {
+  let txt;
+  try { txt = diagnostic(); }
+  catch (e) { txt = 'ERREUR PENDANT LE DIAGNOSTIC\n' + (e && e.stack || e); }
+  $('diagout').textContent = txt;
+  $('diagout').style.display = 'block';
+};
+
+$('diagcopy').onclick = async () => {
+  try { await navigator.clipboard.writeText($('diagout').textContent || ''); $('diagcopy').textContent = 'Copié'; }
+  catch { $('diagcopy').textContent = 'Copie impossible'; }
+  setTimeout(() => { $('diagcopy').textContent = 'Copier'; }, 1800);
+};
+
 /* ---------------------- mises a jour -------------------------- */
 (function updates(){
   const box = document.getElementById('updbox');
@@ -434,5 +572,6 @@ $('customrate').addEventListener('keydown', e => { if (e.key === 'Enter') applyC
   if (!el) return;
   let v = '—';
   try { if (window.api.appVersion) v = await window.api.appVersion(); } catch {}
+  window.__ver = v;
   el.textContent = 'version ' + v;
 })();
