@@ -546,7 +546,32 @@ $('diagcopy').onclick = async () => {
 
   const say = (html, cls) => { box.innerHTML = `<div class="msg${cls ? ' ' + cls : ''}">${html}</div>`; };
 
+  /* Bandeau en tete de fenetre : la verification au demarrage est
+     silencieuse tant qu'il n'y a rien, et ne se manifeste que si une
+     version existe reellement. */
+  const ban = document.getElementById('updbanner');
+  const banTitle = document.getElementById('ub-title');
+  const banSub = document.getElementById('ub-sub');
+  const banGo = document.getElementById('ub-go');
+  document.getElementById('ub-close').onclick = () => { ban.hidden = true; };
+
+  const showBanner = (titre, sous, pret) => {
+    banTitle.textContent = titre;
+    banSub.textContent = sous || '';
+    banGo.hidden = !pret;
+    ban.hidden = false;
+  };
+  banGo.onclick = () => window.api.update.install();
+
   window.api.update.on((_evt, msg) => {
+    if (msg.state === 'found')
+      showBanner(`Version ${msg.version} disponible`, 'Téléchargement en cours…', false);
+    if (msg.state === 'progress')
+      showBanner('Téléchargement de la mise à jour', Math.round(msg.percent) + ' %', false);
+    if (msg.state === 'ready')
+      showBanner(`Version ${msg.version} prête`,
+                 "Elle s'installera au redémarrage de l'application.", true);
+
     if (msg.state === 'checking')   say('Recherche d\'une nouvelle version…');
     if (msg.state === 'none')       say('Tu es a jour (version ' + msg.version + ').', 'good');
     if (msg.state === 'found')      say(`<b>Version ${msg.version} disponible.</b> Telechargement en cours…`);

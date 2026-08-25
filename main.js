@@ -63,8 +63,13 @@ ipcMain.handle('app-version', async () => app.getVersion());
 
 app.whenReady().then(() => {
   createWindow();
-  if (app.isPackaged && !isPortable()) {
-    autoUpdater.checkForUpdates().catch(() => {});
+  /* La verification attend que la page ait fini de charger : lancee plus
+     tot, ses evenements partiraient avant que l'interface n'ecoute, et
+     la nouvelle version passerait inapercue. */
+  if (app.isPackaged && !isPortable() && win) {
+    win.webContents.once('did-finish-load', () => {
+      setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 1200);
+    });
   }
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

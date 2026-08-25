@@ -164,3 +164,16 @@ ul.tight b{color:var(--gold)}
 @media (prefers-reduced-motion:reduce){
   *{transition:none!important;animation:none!important}
 }
+
+
+/* bandeau de mise a jour, en tete de fenetre */
+#updbanner{margin:-24px -28px 22px;padding:14px 28px;
+  background:linear-gradient(135deg,rgba(255,154,46,.22),rgba(255,78,125,.16));
+  border-bottom:1px solid rgba(255,154,46,.4)}
+#updbanner[hidden]{display:none}
+.ub-in{display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap}
+.ub-txt{display:flex;flex-direction:column;gap:2px;font-size:13.5px}
+.ub-txt b{font-family:var(--disp);font-size:15px}
+#ub-sub{color:var(--dim)}
+.ub-act{display:flex;gap:9px;flex-wrap:wrap}
+@media(max-width:560px){#updbanner{margin:-18px -16px 18px;padding:12px 16px}}
