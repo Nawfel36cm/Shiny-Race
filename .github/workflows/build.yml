@@ -30,17 +30,27 @@ jobs:
       - name: Tests
         run: npm test
 
+      - name: Publier ou non
+        shell: bash
+        run: echo "MODE=$([[ '${{ github.ref_type }}' == 'tag' ]] && echo always || echo never)" >> $GITHUB_ENV
+
       - name: Construire (Windows)
         if: matrix.os == 'windows-latest'
-        run: npm run build:win -- --publish never
+        run: npm run build:win -- --publish ${{ env.MODE }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Construire (macOS)
         if: matrix.os == 'macos-latest'
-        run: npm run build:mac -- --publish never
+        run: npm run build:mac -- --publish ${{ env.MODE }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Construire (Linux)
         if: matrix.os == 'ubuntu-latest'
-        run: npm run build:linux -- --publish never
+        run: npm run build:linux -- --publish ${{ env.MODE }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Récupérer les installeurs
         if: always()
@@ -51,5 +61,6 @@ jobs:
             dist/*.exe
             dist/*.dmg
             dist/*.AppImage
+            dist/*.zip
             dist/*.yml
           if-no-files-found: ignore
