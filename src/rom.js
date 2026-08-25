@@ -369,6 +369,20 @@ function applyStarters(rom, writes) {
  *  aucun pointeur existant n'est invalide.                          *
  * ---------------------------------------------------------------- */
 const BALL_ITEMS = { master: 1, ultra: 2, great: 3, poke: 4 };
+
+/* CT01-CT50 = objets 289..338, CS01-CS08 = 339..346. Verifie sur les cinq
+   ROMs : le jeu lui-meme distribue ces objets avec ces identifiants. */
+const TM_FIRST = 289, TM_LAST = 338, HM_FIRST = 339, HM_LAST = 346;
+
+/* Les badges ne sont pas des objets mais des drapeaux, ranges dans la
+   sauvegarde et non dans la ROM. On les pose par `setflag` (0x29).
+   Les plages different selon la famille de jeux — verifie sur les cinq. */
+const BADGE_FLAGS = {
+  frlg: [0x820, 0x821, 0x822, 0x823, 0x824, 0x825, 0x826, 0x827],
+  rse:  [0x807, 0x808, 0x809, 0x80A, 0x80B, 0x80C, 0x80D, 0x80E]
+};
+const badgeFlagsFor = code => (['BPR', 'BPG'].includes(String(code || '').slice(0, 3).toUpperCase())
+  ? BADGE_FLAGS.frlg : BADGE_FLAGS.rse);
 const KIT_DEFAULT = [
   { item: BALL_ITEMS.poke,   qty: 200, label: 'Poké Ball' },
   { item: BALL_ITEMS.great,  qty: 150, label: 'Super Ball' },
@@ -446,17 +460,32 @@ function findFreeSpace(b, need, from = 0) {
  * Rend les octets a ecrire pour la dotation.
  * `kit` : [{ item, qty }] — quantites bornees a 1..999 (limite d'un slot).
  */
-function buildStarterKit(b, gift, kit = KIT_DEFAULT) {
+function buildStarterKit(b, gift, kit = KIT_DEFAULT, opts = {}) {
   if (!gift || gift.tooMany) return { writes: [], script: [], scriptOff: -1, sites: [] };
 
   const clean = kit.filter(x => x.qty > 0)
                    .map(x => ({ item: x.item, qty: Math.min(999, Math.max(1, x.qty | 0)) }));
-  if (!clean.length) return { writes: [], script: [], scriptOff: -1, sites: [] };
 
+  /* `additem` (0x44) est silencieux : dans les scripts d'origine le
+     message « vous obtenez… » vient d'un `callstd` separe. On peut donc
+     enchainer des dizaines d'objets sans un seul dialogue. */
   const script = [];
   for (const it of clean) {
     script.push(0x44, it.item & 0xFF, it.item >> 8 & 0xFF, it.qty & 0xFF, it.qty >> 8 & 0xFF);
   }
+
+  let tmCount = 0, hmCount = 0, badgeCount = 0;
+  if (opts.tms) for (let it = TM_FIRST; it <= TM_LAST; it++) {
+    script.push(0x44, it & 0xFF, it >> 8 & 0xFF, 0x01, 0x00); tmCount++;
+  }
+  if (opts.hms) for (let it = HM_FIRST; it <= HM_LAST; it++) {
+    script.push(0x44, it & 0xFF, it >> 8 & 0xFF, 0x01, 0x00); hmCount++;
+  }
+  if (opts.badges) for (const fl of badgeFlagsFor(opts.code)) {
+    script.push(0x29, fl & 0xFF, fl >> 8 & 0xFF); badgeCount++;
+  }
+
+  if (!script.length) return { writes: [], script: [], scriptOff: -1, sites: [] };
   script.push(0x03);                                   // return
 
   const off = findFreeSpace(b, script.length);
@@ -474,7 +503,8 @@ function buildStarterKit(b, gift, kit = KIT_DEFAULT) {
        le reste de `nop` pour ne rien decaler */
     for (let k = 5; k < s.len; k++) writes.push({ off: s.off + k, value: 0x00 });
   }
-  return { writes, script, scriptOff: off, ptr, sites: gift.sites, items: clean };
+  return { writes, script, scriptOff: off, ptr, sites: gift.sites, items: clean,
+           tmCount, hmCount, badgeCount };
 }
 
 function applyBytes(rom, writes) {
@@ -523,5 +553,6 @@ window.ROM = {
   findEncounterTable, readEncounters, randomizeEncounters, applyEncounters,
   findStarters, randomizeStarters, applyStarters, STARTER_SETS,
   findBallGift, buildStarterKit, applyBytes, findFreeSpace, KIT_DEFAULT, BALL_ITEMS,
+  BADGE_FLAGS, badgeFlagsFor, TM_FIRST, TM_LAST, HM_FIRST, HM_LAST,
   rng, buildIPS, sha1
 };

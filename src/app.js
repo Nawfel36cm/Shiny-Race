@@ -268,7 +268,10 @@ function buildPatched() {
 
   let kit = { writes: [], items: [] };
   if (ballGift && !ballGift.tooMany && $('dokit').checked) {
-    kit = R.buildStarterKit(out, ballGift, readKit());
+    kit = R.buildStarterKit(out, ballGift, readKit(), {
+      tms: $('dotms').checked, hms: $('dohms').checked,
+      badges: $('dobadges').checked, code: R.readHeader(rom).code
+    });
     R.applyBytes(out, kit.writes);
   }
 
@@ -301,8 +304,14 @@ function summary({ writes, shiny, start, kit }) {
     ? `rencontres sauvages : ${writes.length} emplacement(s) retirés au sort`
     : `rencontres sauvages : non appliquées (table introuvable)`);
   if (start && start.species.length) parts.push(`starters : ${start.species.length} espèces remplacées (${start.writes.length} écriture(s))`);
-  if (kit && kit.items && kit.items.length)
-    parts.push(`dotation : ${kit.items.length} objets ajoutés`);
+  if (kit && kit.writes && kit.writes.length) {
+    const d = [];
+    if (kit.items && kit.items.length) d.push(`${kit.items.length} objets`);
+    if (kit.tmCount) d.push(`${kit.tmCount} CT`);
+    if (kit.hmCount) d.push(`${kit.hmCount} CS`);
+    if (kit.badgeCount) d.push(`${kit.badgeCount} badges`);
+    parts.push('dotation : ' + d.join(', '));
+  }
   return parts.join(' · ');
 }
 
