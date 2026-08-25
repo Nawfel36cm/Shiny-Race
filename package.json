@@ -64,12 +64,13 @@
       }
     ],
     "publish": [
-      {
-        "provider": "github",
-        "owner": "Nawfel36cm",
-        "repo": "Shiny-Race"
-      }
-    ]
+  {
+    "provider": "github",
+    "owner": "Nawfel36cm",
+    "repo": "Shiny-Race",
+    "releaseType": "release"
+  }
+]
   },
   "dependencies": {
     "electron-updater": "^6.3.9"
