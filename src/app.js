@@ -96,7 +96,7 @@ function renderCompat(activePlatform) {
 /* --------------------------- onglets -------------------------- */
 function show(t) {
   document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', b.dataset.t === t));
-  ['shiny', 'wild', 'upr', 'compat'].forEach(p => $('pane-' + p).hidden = p !== t);
+  ['shiny', 'wild', 'compat'].forEach(p => $('pane-' + p).hidden = p !== t);
 }
 document.querySelectorAll('.tab').forEach(b => b.onclick = () => { if (!b.disabled) show(b.dataset.t); });
 
@@ -178,7 +178,7 @@ const KIT_FIELDS = [
 ];
 
 const readKit = () => KIT_FIELDS
-  .map(f => ({ item: f.item, qty: Math.min(999, Math.max(0, parseInt($(f.id).value, 10) || 0)) }))
+  .map(f => ({ item: f.item, qty: Math.min(R.ITEM_QTY_MAX, Math.max(0, parseInt($(f.id).value, 10) || 0)) }))
   .filter(x => x.qty > 0);
 
 function renderKit() {
@@ -363,86 +363,8 @@ $('shinygen').onclick = () => exportRom('shinyout');
 $('shinyips').onclick = () => exportIps('shinyout');
 
 /* --------------------- randomizer complet ---------------------- */
-let presets = [];
 
-async function refreshSetup() {
-  const st = await window.api.setupState();
-  presets = st.presets;
 
-  const line = (label, ok, detail) =>
-    `<span class="badge ${ok ? 'ok' : 'ko'}">${label}</span> <span class="dimtxt">${detail}</span>`;
-
-  $('setup').innerHTML = st.ready
-    ? `<div class="msg good"><b>Randomizer prêt.</b> Moteur ${st.jar.source}, runtime Java ${st.java.source}. Rien d'autre à installer.</div>`
-    : `<div class="msg"><b>Randomizer non disponible.</b>
-        <ul class="tight">
-          <li>${line('Java', st.java.ok, st.java.ok ? st.java.version : 'introuvable')}</li>
-          <li>${line('Moteur', !!st.jar.path, st.jar.path || 'PokeRandoZX.jar absent du dossier vendor/')}</li>
-        </ul>
-        Cette version n'embarque pas le moteur. Voir la section « Tout embarquer » du README pour le livrer dans l'installeur.
-        <div class="acts"><button class="btn ghost small" id="pickjar">Indiquer le .jar</button>
-        <button class="btn ghost small" id="pickjava">Indiquer Java</button></div></div>`;
-
-  if (!st.ready) {
-    const ask = async (key, title, filters) => {
-      const f = await window.api.pickFile({ title, filters });
-      if (f) { await window.api.setPath({ key, value: f }); refreshSetup(); }
-    };
-    const j = $('pickjar'), v = $('pickjava');
-    if (j) j.onclick = () => ask('jarPath', 'PokeRandoZX.jar', [{ name: 'Java', extensions: ['jar'] }]);
-    if (v) v.onclick = () => ask('javaPath', 'Exécutable Java', []);
-  }
-
-  $('preset').innerHTML = presets.length
-    ? presets.map((p, i) => `<option value="${i}">${p.name}</option>`).join('')
-    : `<option value="">aucun préréglage</option>`;
-
-  uprReady(st.ready);
-}
-
-$('addpreset').onclick = async () => {
-  const f = await window.api.pickFile({ title: 'Préréglage', filters: [{ name: 'Réglages', extensions: ['rnqs'] }] });
-  if (!f) return;
-  await window.api.setPath({ key: 'presetDir', value: f.replace(/[\/][^\/]+$/, '') });
-  refreshSetup();
-};
-
-function uprReady(ready) {
-  $('runupr').disabled = !(ready && presets.length && romPath);
-}
-
-window.api.onUprLog(line => {
-  $('uprlog').hidden = false;
-  $('uprlog').textContent += line;
-  $('uprlog').scrollTop = $('uprlog').scrollHeight;
-});
-
-$('runupr').onclick = async () => {
-  const preset = presets[+$('preset').value];
-  if (!preset) return;
-  const output = await window.api.saveBytes({
-    data: new Uint8Array(0),
-    defaultName: romName.replace(/\.[^.]+$/, '') + ' [random]' + romName.match(/\.[^.]+$/)[0],
-    filters: [{ name: 'ROM', extensions: ['gba', 'nds', '3ds', 'gb', 'gbc'] }]
-  });
-  if (!output) return;
-
-  $('uprlog').hidden = false; $('uprlog').textContent = '';
-  $('runupr').disabled = true;
-  const r = await window.api.runUpr({ input: romPath, output, settings: preset.path, log: true });
-
-  if (r.ok && $('uprshiny').checked && shinyHits.length) {
-    const patched = await window.api.readRom(output);
-    const b = new Uint8Array(patched.bytes);
-    R.shinyPatches(R.findShinyChecks(b), R.SHINY_RATES[rateIdx].count).forEach(x => b[x.off] = x.value);
-    await window.api.saveBytes({ data: b, defaultName: output, filters: [] });
-    $('uprlog').textContent += `\n→ Taux de shiny porté à ${R.SHINY_RATES[rateIdx].label}.`;
-  }
-  $('runupr').disabled = false;
-  $('uprlog').textContent += r.ok ? '\n→ Terminé.' : '\n→ Échec. Le préréglage correspond-il à la génération de la ROM ?';
-};
-
-window.addEventListener('DOMContentLoaded', refreshSetup);
 
 
 
@@ -555,31 +477,27 @@ $('diagcopy').onclick = async () => {
 
   const say = (html, cls) => { box.innerHTML = `<div class="msg${cls ? ' ' + cls : ''}">${html}</div>`; };
 
-  /* Bandeau en tete de fenetre : la verification au demarrage est
-     silencieuse tant qu'il n'y a rien, et ne se manifeste que si une
-     version existe reellement. */
+  /* Bandeau en tete de fenetre : une ligne fine, qui ne se montre que
+     s'il y a reellement une version a installer. Silencieux sinon. */
   const ban = document.getElementById('updbanner');
-  const banTitle = document.getElementById('ub-title');
-  const banSub = document.getElementById('ub-sub');
+  const banTxt = document.getElementById('ub-txt');
   const banGo = document.getElementById('ub-go');
   document.getElementById('ub-close').onclick = () => { ban.hidden = true; };
+  banGo.onclick = () => window.api.update.install();
 
-  const showBanner = (titre, sous, pret) => {
-    banTitle.textContent = titre;
-    banSub.textContent = sous || '';
+  const showBanner = (txt, pret) => {
+    banTxt.textContent = txt;
     banGo.hidden = !pret;
     ban.hidden = false;
   };
-  banGo.onclick = () => window.api.update.install();
 
   window.api.update.on((_evt, msg) => {
     if (msg.state === 'found')
-      showBanner(`Version ${msg.version} disponible`, 'Téléchargement en cours…', false);
+      showBanner(`Version ${msg.version} disponible — téléchargement…`, false);
     if (msg.state === 'progress')
-      showBanner('Téléchargement de la mise à jour', Math.round(msg.percent) + ' %', false);
+      showBanner(`Téléchargement de la mise à jour — ${Math.round(msg.percent)} %`, false);
     if (msg.state === 'ready')
-      showBanner(`Version ${msg.version} prête`,
-                 "Elle s'installera au redémarrage de l'application.", true);
+      showBanner(`Version ${msg.version} prête à installer`, true);
 
     if (msg.state === 'checking')   say('Recherche d\'une nouvelle version…');
     if (msg.state === 'none')       say('Tu es a jour (version ' + msg.version + ').', 'good');
@@ -618,4 +536,6 @@ $('diagcopy').onclick = async () => {
   try { if (window.api.appVersion) v = await window.api.appVersion(); } catch {}
   window.__ver = v;
   el.textContent = 'version ' + v;
+  const p = document.getElementById('updver');
+  if (p) p.textContent = 'version ' + v;
 })();

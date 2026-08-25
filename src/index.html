@@ -12,13 +12,10 @@
 <body>
 
 <div id="updbanner" hidden>
-  <div class="ub-in">
-    <div class="ub-txt"><b id="ub-title">Nouvelle version disponible</b><span id="ub-sub"></span></div>
-    <div class="ub-act">
-      <button class="btn primary small" id="ub-go" hidden>Redémarrer et installer</button>
-      <button class="btn ghost small" id="ub-close">Plus tard</button>
-    </div>
-  </div>
+  <span id="ub-dot"></span>
+  <span id="ub-txt">Nouvelle version disponible</span>
+  <button class="ub-btn" id="ub-go" hidden>Installer</button>
+  <button class="ub-x" id="ub-close" title="Masquer">&times;</button>
 </div>
 
 <header class="masthead">
@@ -38,7 +35,6 @@
 <nav class="tabs" id="tabs">
   <button class="tab" data-t="shiny" aria-selected="true">Taux de shiny</button>
   <button class="tab" data-t="wild" aria-selected="false">Randomizer</button>
-  <button class="tab" data-t="upr" aria-selected="false">Randomizer complet</button>
   <button class="tab" data-t="compat" aria-selected="false">Compatibilité</button>
 </nav>
 
@@ -108,11 +104,11 @@
     <label>Dotation de départ</label>
     <div id="kitstatus"></div>
     <div class="row" style="gap:14px;margin-bottom:10px">
-      <span class="pill dim">Poké Ball</span><input type="text" id="kpoke" value="200" style="min-width:80px">
-      <span class="pill dim">Super Ball</span><input type="text" id="kgreat" value="150" style="min-width:80px">
+      <span class="pill dim">Poké Ball</span><input type="text" id="kpoke" value="255" style="min-width:80px">
+      <span class="pill dim">Super Ball</span><input type="text" id="kgreat" value="255" style="min-width:80px">
     </div>
     <div class="row" style="gap:14px">
-      <span class="pill dim">Hyper Ball</span><input type="text" id="kultra" value="100" style="min-width:80px">
+      <span class="pill dim">Hyper Ball</span><input type="text" id="kultra" value="255" style="min-width:80px">
       <span class="pill dim">Master Ball</span><input type="text" id="kmaster" value="1" style="min-width:80px">
     </div>
     <label class="check" style="margin-top:12px"><input type="checkbox" id="dokit" checked> Remplacer le don du professeur par cette dotation</label>
@@ -123,17 +119,12 @@
     n'aies pas encore tel badge, certains dialogues seront incohérents. Sans importance pour une race
     où personne ne suit l'histoire, mais il faut le savoir. Les CT et CS sont ajoutées en silence :
     aucun message ne s'affiche malgré les 58 objets.</p>
-    <p class="note">Maximum 999 par objet, limite d'un emplacement de sac. Mettre 0 retire l'objet
-    de la dotation. Le message affiché à l'écran continuera d'annoncer cinq Poké Balls : seul le texte
+    <p class="note"><b>Maximum 255 par objet.</b> Le jeu ne lit qu'un octet pour la quantité :
+    demander 800 donne 32 (800 − 3×256). Les valeurs plus grandes sont ramenées à 255.
+    Mettre 0 retire l'objet de la dotation. Le message affiché à l'écran continuera d'annoncer cinq Poké Balls : seul le texte
     d'origine subsiste, les objets réellement reçus sont bien ceux-ci.</p>
   </div>
 
-  <div class="field">
-    <label>Légendaires, dresseurs, échanges, cadeaux</label>
-    <p class="note">Ces Pokémon ne vivent pas dans une table mais dispersés dans les scripts de map.
-    Les randomiser demande la base d'offsets de l'Universal Pokémon Randomizer ZX — utilise l'onglet
-    <b>Randomizer complet</b>, qui couvre les 28 jeux.</p>
-  </div>
   
   <div class="acts">
     <button class="btn primary" id="gen" disabled>Générer la ROM</button>
@@ -142,27 +133,6 @@
   <div id="wildout"></div>
   <p class="note">Le taux de shiny réglé dans l'onglet précédent est appliqué dans le même fichier.
   Si la table de rencontres reste introuvable, l'export se fait quand même avec le seul taux de shiny.</p>
-</section>
-
-<!-- ============================= UPR ============================== -->
-<section class="pane" id="pane-upr" hidden>
-  <div id="setup"></div>
-
-  <div class="field">
-    <label for="preset">Préréglage</label>
-    <div class="row">
-      <select id="preset"></select>
-      <button class="btn ghost small" id="addpreset">Ajouter un fichier…</button>
-    </div>
-    <p class="note">Un préréglage définit ce qui est randomisé : dresseurs, capacités, statistiques, types, objets, starters. Les préréglages livrés couvrent les formats de race courants.</p>
-  </div>
-
-  <label class="check"><input type="checkbox" id="uprshiny" checked> Appliquer aussi le taux de shiny après randomisation (3G uniquement)</label>
-
-  <div class="acts">
-    <button class="btn primary" id="runupr" disabled>Randomiser</button>
-  </div>
-  <pre id="uprlog" class="log" hidden></pre>
 </section>
 
 <section class="pane" id="pane-compat" hidden>
@@ -184,9 +154,10 @@
 <section class="field" id="updsection">
   <label>Mises à jour</label>
   <div class="row">
-    <button class="btn ghost" id="updbtn">Vérifier maintenant</button>
+    <button class="btn ghost small" id="updbtn">Vérifier maintenant</button>
+    <span class="pill dim" id="updver">version …</span>
   </div>
-  <div id="updbox" style="margin-top:12px"></div>
+  <div id="updbox" style="margin-top:10px"></div>
 </section>
 
 <footer>

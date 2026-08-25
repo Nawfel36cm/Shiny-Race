@@ -374,6 +374,9 @@ const BALL_ITEMS = { master: 1, ultra: 2, great: 3, poke: 4 };
    ROMs : le jeu lui-meme distribue ces objets avec ces identifiants. */
 const TM_FIRST = 289, TM_LAST = 338, HM_FIRST = 339, HM_LAST = 346;
 
+/* Plafond reel d'un emplacement de sac : le jeu ne lit qu'un octet. */
+const ITEM_QTY_MAX = 255;
+
 /* Les badges ne sont pas des objets mais des drapeaux, ranges dans la
    sauvegarde et non dans la ROM. On les pose par `setflag` (0x29).
    Les plages different selon la famille de jeux — verifie sur les cinq. */
@@ -463,8 +466,13 @@ function findFreeSpace(b, need, from = 0) {
 function buildStarterKit(b, gift, kit = KIT_DEFAULT, opts = {}) {
   if (!gift || gift.tooMany) return { writes: [], script: [], scriptOff: -1, sites: [] };
 
+  /* La quantite d'un `additem` est lue sur UN octet par le jeu, malgre
+     les deux octets du script : demander 800 donnait 32 (800 % 256).
+     On borne donc a 255, et l'appelant est prevenu du plafonnement. */
   const clean = kit.filter(x => x.qty > 0)
-                   .map(x => ({ item: x.item, qty: Math.min(999, Math.max(1, x.qty | 0)) }));
+                   .map(x => ({ item: x.item,
+                                qty: Math.min(ITEM_QTY_MAX, Math.max(1, x.qty | 0)),
+                                asked: Math.max(1, x.qty | 0) }));
 
   /* `additem` (0x44) est silencieux : dans les scripts d'origine le
      message « vous obtenez… » vient d'un `callstd` separe. On peut donc
@@ -553,6 +561,7 @@ window.ROM = {
   findEncounterTable, readEncounters, randomizeEncounters, applyEncounters,
   findStarters, randomizeStarters, applyStarters, STARTER_SETS,
   findBallGift, buildStarterKit, applyBytes, findFreeSpace, KIT_DEFAULT, BALL_ITEMS,
+  ITEM_QTY_MAX,
   BADGE_FLAGS, badgeFlagsFor, TM_FIRST, TM_LAST, HM_FIRST, HM_LAST,
   rng, buildIPS, sha1
 };
