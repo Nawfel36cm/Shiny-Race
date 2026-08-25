@@ -251,7 +251,8 @@ select option{background:var(--surf)}
 .bar i{display:block;height:100%;background:var(--hot);transition:width .4s}
 
 .pop{display:flex;align-items:center;gap:15px}
-.pop img{width:76px;height:76px;image-rendering:pixelated;position:relative;z-index:2;
+.pop img{width:76px;height:76px;object-fit:contain;object-position:center bottom;
+  image-rendering:pixelated;position:relative;z-index:2;
   filter:drop-shadow(0 0 18px rgba(255,201,60,.55))}
 .sparkwrap{position:relative;flex:none}
 .spark{position:absolute;inset:0;pointer-events:none;z-index:3}
@@ -1074,7 +1075,7 @@ async function record(name, pts, why, dexid){
   }).join('');
   const visual = dexid
     ? `<div class="sparkwrap"><div class="spark">${stars}</div>
-       <img src="${SPRITE(dexid)}" alt="" onerror="this.style.visibility='hidden'"></div>` : '';
+       <img src="${spriteFor(dexid)}" alt="" onerror="this.style.visibility='hidden'"></div>` : '';
   $('catchmsg').innerHTML = `<div class="msg ${ok?'good':''}"><div class="pop">${visual}
       <div><div style="font-family:var(--disp);font-weight:700;font-size:21px">${name}
         <span style="color:var(--mint)">+${pts}</span></div>
