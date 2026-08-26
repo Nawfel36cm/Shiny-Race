@@ -588,9 +588,19 @@ async function exportRom(box) {
     $(box).innerHTML = `<div class="msg"><b>Rien à écrire.</b> Aucun changement à appliquer sur cette ROM.</div>`;
     return;
   }
+  /* L'extension suit le support de la ROM ouverte, pas un défaut écrit
+     en dur : une ROM DS enregistrée en .gba n'est ouverte par aucun
+     émulateur. On repart de l'extension du fichier d'origine quand elle
+     est exploitable, sinon de celle du support. */
+  const ext = plat === 'nds' ? 'nds' : 'gba';
+  const orig = (romName.match(/\.([A-Za-z0-9]+)$/) || [])[1];
+  const finale = (orig && orig.toLowerCase() === ext) ? orig : ext;
   const p = await window.api.saveBytes({
-    data: info.out, defaultName: stem() + '.gba',
-    filters: [{ name: 'ROM GBA', extensions: ['gba'] }]
+    data: info.out, defaultName: stem() + '.' + finale,
+    filters: [
+      { name: plat === 'nds' ? 'ROM Nintendo DS' : 'ROM Game Boy Advance', extensions: [ext] },
+      { name: 'Tous les fichiers', extensions: ['*'] }
+    ]
   });
   if (p) reportTo(box, p, info);
 }
@@ -601,6 +611,27 @@ async function exportIps(box) {
     $(box).innerHTML = `<div class="msg"><b>Rien à écrire.</b> Aucun changement à appliquer sur cette ROM.</div>`;
     return;
   }
+
+  /* Le format IPS code ses adresses sur trois octets : il ne sait pas
+     désigner un octet au-delà de 16 Mo. Une ROM DS en fait 128. Nos
+     modifications restent dans arm9, tout en bas du fichier, mais il
+     faut le vérifier plutôt que le supposer — un patch qui déborde
+     s'applique silencieusement au mauvais endroit. */
+  if (info.out.length !== rom.length){
+    $(box).innerHTML = `<div class="msg"><b>Patch IPS impossible.</b>
+      La ROM produite n'a pas la même taille que l'originale ; le format IPS ne sait pas
+      représenter ça. Utilise « Générer la ROM ».</div>`;
+    return;
+  }
+  let dernier = -1;
+  for (let i = rom.length - 1; i >= 0; i--) if (rom[i] !== info.out[i]) { dernier = i; break; }
+  if (dernier >= 0xFFFFFF){
+    $(box).innerHTML = `<div class="msg"><b>Patch IPS impossible.</b>
+      Une modification se situe à l'adresse 0x${hex(dernier, 6)}, au-delà des 16 Mo que le format
+      IPS sait adresser. Utilise « Générer la ROM », qui n'a pas cette limite.</div>`;
+    return;
+  }
+
   const p = await window.api.saveBytes({
     data: R.buildIPS(rom, info.out), defaultName: stem() + '.ips',
     filters: [{ name: 'Patch IPS', extensions: ['ips'] }]
