@@ -1,6 +1,6 @@
 {
   "name": "shiny-race-studio",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Patcheur de taux shiny et randomizer pour ROMs Pokémon GBA",
   "main": "main.js",
   "scripts": {

@@ -82,7 +82,10 @@ app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) creat
 ipcMain.handle('pick-rom', async () => {
   const r = await dialog.showOpenDialog(win, {
     title: 'Choisir une ROM',
-    filters: [{ name: 'ROM Game Boy Advance', extensions: ['gba', 'bin'] }],
+    filters: [
+      { name: 'ROM Game Boy Advance ou Nintendo DS', extensions: ['gba', 'nds', 'bin'] },
+      { name: 'Tous les fichiers', extensions: ['*'] }
+    ],
     properties: ['openFile']
   });
   if (r.canceled) return null;

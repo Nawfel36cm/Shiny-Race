@@ -317,9 +317,22 @@ const T = {
   cmpR0: m => 0x2800 | (m & 0xFF)
 };
 
-function seuilPour(denom){
-  const d = Math.max(1, Math.min(65536, Math.round(denom) || 8192));
-  return Math.max(1, Math.min(65536, Math.round(65536 / d)));
+/* ⚠ Unité. Comme rom.js, ce module raisonne en NOMBRE DE VALEURS
+   FAVORABLES sur 65536, jamais en dénominateur. Un taux de 1/4096
+   correspond à count = 16, pas à 4096. Confondre les deux inverse le
+   réglage sans qu'aucune vérification ne s'en aperçoive. */
+const RATE_MAX_COUNT = 65536;
+function normCount(count){
+  const c = Math.round(Number(count) || 8);
+  return Math.max(1, Math.min(RATE_MAX_COUNT, c));
+}
+/** Dénominateur voulu (4096 pour 1/4096) → valeurs favorables. */
+function countFromDenominator(denom){
+  const d = Math.max(1, Math.round(Number(denom) || 0));
+  const wanted = Math.round(65536 / d);
+  const count = Math.min(RATE_MAX_COUNT, Math.max(1, wanted));
+  return { count, wanted, denomAsked: d, denomReal: Math.round(65536 / count),
+           capped: wanted > RATE_MAX_COUNT };
 }
 
 /** Décompose N en m × 2^k avec m ≤ 255, pour les seuils qui débordent. */
@@ -329,8 +342,8 @@ function decomposer(N){
   return { k, m: Math.max(1, Math.min(255, m)), effectif: m * (1 << k) };
 }
 
-function shinyPatches(hits, denom){
-  const N = seuilPour(denom);
+function shinyPatches(hits, count){
+  const N = normCount(count);
   const out = [];
   for (const h of hits){
     if (N <= 255){
@@ -444,7 +457,7 @@ const API = {
   blzInfo, isCompressed, blzDecompress, blzCompress,
   extractArm9, replaceArm9,
   findShinyChecks, findAntiShinyLoops, shinyPatches, loopPatches,
-  seuilPour, decomposer, patchNds, GUARD
+  RATE_MAX_COUNT, normCount, countFromDenominator, decomposer, patchNds, GUARD
 };
 
 /* Chargé à la fois par Node (tests) et par la fenêtre (interface). */

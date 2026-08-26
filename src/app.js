@@ -26,7 +26,16 @@ const EYEBROW = { gba:'Game Boy Advance · Génération 3',
 
 function choisir(id){
   if (id !== 'gba' && id !== 'nds') return;
+  const change = plat !== null && plat !== id;
   plat = id;
+  if (change){                       // on ne garde rien d'un autre support
+    rom = null; romName = ''; ndsRep = null; shinyHits = [];
+    table = null; encounters = []; starters = null; ballGift = null;
+    customCount = null; rateIdx = 1;
+    $('idcard').innerHTML = '';
+    if ($('customrate')) $('customrate').value = '';
+    ['shinyout','customout','hits'].forEach(k => { if ($(k)) $(k).innerHTML = ''; });
+  }
   document.querySelectorAll('.ch-card').forEach(c => c.classList.toggle('on', c.dataset.plat === id));
   $('chooser').hidden = true;
   const eb = document.querySelector('.masthead .eyebrow');
@@ -34,6 +43,8 @@ function choisir(id){
   $('tabs').hidden = false;
   majPlafond();
   renderCompat(id);
+  renderRates();
+  syncExportButtons();
   show('shiny');
 }
 
@@ -54,6 +65,40 @@ function majPlafond(){
 document.addEventListener('click', e => {
   const c = e.target.closest('.ch-card');
   if (c && !c.disabled) choisir(c.dataset.plat);
+});
+
+/* Retour à l'accueil par le logo. On remet tout à zéro plutôt que de
+   seulement réafficher l'écran : garder la ROM et les résultats d'un
+   autre support en mémoire est le meilleur moyen d'appliquer un
+   traitement à la mauvaise machine sans s'en apercevoir. */
+function accueil(){
+  plat = null; rom = null; romPath = ''; romName = ''; ndsRep = null;
+  shinyHits = []; table = null; encounters = []; starters = null; ballGift = null;
+  rateIdx = 1; customCount = null;
+  $('idcard').innerHTML = '';
+  ['shinyout','customout','hits'].forEach(id => { if ($(id)) $(id).innerHTML = ''; });
+  if ($('customrate')) $('customrate').value = '';
+  document.querySelectorAll('.ch-card').forEach(c => c.classList.remove('on'));
+  $('tabs').hidden = true;
+  document.querySelectorAll('.pane').forEach(p => p.hidden = true);
+  const eb = document.querySelector('.masthead .eyebrow');
+  if (eb) eb.textContent = 'Choisis ton support';
+  $('chooser').hidden = false;
+  renderCompat(null);
+  syncExportButtons();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const b = document.querySelector('.masthead .brand');
+  if (!b) return;
+  b.style.cursor = 'pointer';
+  b.title = "Revenir au choix du support";
+  b.setAttribute('role','button');
+  b.setAttribute('tabindex','0');
+  b.addEventListener('click', accueil);
+  b.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); accueil(); }
+  });
 });
 
 /* ------------------------- ouverture ------------------------- */
@@ -194,11 +239,23 @@ function show(t) {
 document.querySelectorAll('.tab').forEach(b => b.onclick = () => { if (!b.disabled) show(b.dataset.t); });
 
 /* ---------------------------- shiny --------------------------- */
+/* Les paliers proposés ne sont pas les mêmes : la 3G bute à 1/256,
+   la DS peut monter jusqu'à 100 %. On ne propose donc jamais un
+   palier que le support ne saurait pas tenir. */
+const RATES_NDS = [
+  { label:'1/8192', count:8 },   { label:'1/4096', count:16 },
+  { label:'1/1024', count:64 },  { label:'1/256',  count:256 },
+  { label:'1/64',   count:1024 },{ label:'1/16',   count:4096 },
+  { label:'1/4',    count:16384 },{ label:'100 %', count:65536 }
+];
+const rates = () => plat === 'nds' ? RATES_NDS : R.SHINY_RATES;
+const maxCount = () => plat === 'nds' ? 65536 : R.RATE_MAX_COUNT;
+
 function renderRates() {
-  $('rates').innerHTML = R.SHINY_RATES.map((r, i) =>
+  $('rates').innerHTML = rates().map((r, i) =>
     `<button class="chip" data-i="${i}" aria-pressed="${customCount === null && i === rateIdx}">${r.label}</button>`).join('');
   $('rates').querySelectorAll('.chip').forEach(b => b.onclick = () => {
-    rateIdx = +b.dataset.i; customCount = null;
+    rateIdx = Math.min(+b.dataset.i, rates().length - 1); customCount = null;
     $('customrate').value = ''; $('customout').innerHTML = '';
     renderRates(); renderShiny();
   });
@@ -208,20 +265,35 @@ function renderRates() {
 function applyCustomRate() {
   const raw = $('customrate').value.trim();
   if (!raw) { customCount = null; $('customout').innerHTML = ''; renderRates(); renderShiny(); return; }
-  const r = R.countFromDenominator(raw);
+  const r = plat === 'nds' ? window.NDS.countFromDenominator(raw) : R.countFromDenominator(raw);
   customCount = r.count;
-  $('customout').innerHTML = r.capped
-    ? `<div class="msg"><b>1/${r.denomAsked} est hors de portee en generation 3.</b>
-       Le taux applique sera <b>1/${r.denomReal}</b>, le maximum atteignable.
-       <p>La raison est materielle : le jeu compare le resultat a une constante logee dans un seul octet
-       d'une instruction THUMB. Au-dela de 256 valeurs favorables sur 65536, il faudrait injecter du code,
-       pas seulement reecrire un octet.</p></div>`
-    : `<div class="msg good">Taux applique : <b>1/${r.denomReal}</b>
-       (${r.count} valeur${r.count > 1 ? 's' : ''} favorable${r.count > 1 ? 's' : ''} sur 65536).</div>`;
+
+  if (r.capped){
+    $('customout').innerHTML = plat === 'nds'
+      ? `<div class="msg"><b>1/${r.denomAsked} dépasse 100 %.</b>
+         Le taux appliqué sera <b>1/${r.denomReal}</b>, soit tous les Pokémon chromatiques.</div>`
+      : `<div class="msg"><b>1/${r.denomAsked} est hors de portée en génération 3.</b>
+         Le taux appliqué sera <b>1/${r.denomReal}</b>, le maximum atteignable.
+         <p>La raison est matérielle : le jeu compare le résultat à une constante logée dans un seul
+         octet d'une instruction THUMB. Au-delà de 256 valeurs favorables sur 65536, il faudrait
+         injecter du code, pas seulement réécrire un octet.</p></div>`;
+  } else {
+    const exact = plat === 'nds' && r.count > 255
+      ? (() => { const d = window.NDS.decomposer(r.count);
+                 return Math.round(65536 / d.effectif); })()
+      : r.denomReal;
+    $('customout').innerHTML = `<div class="msg good">Taux appliqué : <b>1/${exact}</b>
+       (${r.count} valeur${r.count > 1 ? 's' : ''} favorable${r.count > 1 ? 's' : ''} sur 65536).${
+       plat === 'nds' && exact !== r.denomAsked
+         ? ` <span style="opacity:.75">Arrondi depuis 1/${r.denomAsked} : au-delà de 1/256 la comparaison
+             élargie procède par paliers.</span>` : ''}</div>`;
+  }
   renderRates(); renderShiny();
 }
 
-const activeCount = () => customCount !== null ? customCount : R.SHINY_RATES[rateIdx].count;
+const activeCount = () => customCount !== null
+  ? customCount
+  : (rates()[Math.min(rateIdx, rates().length - 1)] || rates()[0]).count;
 const shinyList = () => R.shinyPatches(shinyHits, activeCount());
 
 function renderShiny() {
@@ -466,7 +538,7 @@ async function exportIps(box) {
 
 const rateLabel = () => customCount !== null
   ? '1-' + Math.round(65536 / customCount)
-  : R.SHINY_RATES[rateIdx].label.replace('/', '-');
+  : (rates()[Math.min(rateIdx, rates().length - 1)] || rates()[0]).label.replace('/', '-').replace(' %','pc').replace(' ','');
 const stem = () => {
   const bits = [];
   if (shinyHits.length) bits.push(rateLabel());

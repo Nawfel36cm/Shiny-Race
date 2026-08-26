@@ -144,20 +144,23 @@ console.log('\nDétection du test de shininess');
      JSON.stringify(hits));
   ok('octet de seuil repéré', hits[0] && hits[0].seuil === FN+24 && hits[0].old === 8);
 
-  ok('1/8192 laisse le seuil inchangé', N.shinyPatches(hits, 8192).length === 0);
-  const p256 = N.shinyPatches(hits, 4096);
-  ok('1/4096 → un seul octet réécrit',
+  ok('1/8192 (count 8) laisse le seuil inchangé', N.shinyPatches(hits, 8).length === 0);
+  const p256 = N.shinyPatches(hits, 16);
+  ok('1/4096 (count 16) → un seul octet réécrit',
      p256.length === 1 && p256[0].type === 'seuil' && p256[0].bytes[0] === 16);
 
-  const p100 = N.shinyPatches(hits, 1);
+  const p100 = N.shinyPatches(hits, 65536);
   ok('100 % → réécriture de 26 octets',
      p100.length === 1 && p100[0].type === 'reecriture' && p100[0].bytes.length === 26);
   ok('100 % → queue de fonction préservée', p100[0].off + p100[0].bytes.length === FN+26);
 
   ok('seuil 1/256 déborde l\'octet et bascule en réécriture',
-     N.seuilPour(256) === 256 && N.shinyPatches(hits,256)[0].type === 'reecriture');
+     N.countFromDenominator(256).count === 256 && N.shinyPatches(hits,256)[0].type === 'reecriture');
 
-  const d = N.decomposer(N.seuilPour(10));
+  ok('unité respectée : 1/4096 ne vaut pas 4096',
+     N.countFromDenominator(4096).count === 16);
+
+  const d = N.decomposer(N.countFromDenominator(10).count);
   ok('1/10 reconstitué fidèlement', Math.round(65536/d.effectif) === 10,
      `k=${d.k} m=${d.m} effectif=${d.effectif}`);
 }
@@ -194,7 +197,7 @@ console.log('\nChaîne complète');
   ok('aller-retour du codec', eq(N.blzDecompress(arm9), raw));
 
   const { rom } = makeRom({ arm9 });
-  const r = N.patchNds(rom, 4096);
+  const r = N.patchNds(rom, 16);
   ok('la ROM est produite', r.ok === true && !!r.rom,
      r.steps.filter(s=>!s.ok).map(s=>s.name).join(', ') || '—');
 
