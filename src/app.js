@@ -1,13 +1,60 @@
 /* app.js — câblage de l'interface. Toute la logique ROM vit dans rom.js. */
 const R = window.ROM;
-window.addEventListener('DOMContentLoaded', () => renderCompat(null));
+window.addEventListener('DOMContentLoaded', () => {
+  renderCompat(null);
+  const t = document.getElementById('tabs'); if (t) t.hidden = true;
+});
 const $ = id => document.getElementById(id);
 const hex = (n, p = 2) => n.toString(16).toUpperCase().padStart(p, '0');
 
 let rom = null, romPath = '', romName = '';
+let plat = null;              // 'gba' | 'nds' — choisi avant d'ouvrir une ROM
+let ndsRep = null;            // dernier rapport du module DS
 let shinyHits = [], rateIdx = 5, customCount = null;
 let table = null, encounters = [], mode = 'global', starters = null, ballGift = null;
 let jar = null, settings = null;
+
+/* --------------------- choix du support ---------------------- *
+ * On demande la console AVANT la ROM : le traitement, les libellés
+ * et le plafond du taux en dépendent. Le choix reste modifiable,
+ * mais recharger une ROM d'une autre famille sans le changer serait
+ * une source d'erreur silencieuse — d'où la vérification à
+ * l'ouverture.                                                     */
+const NOMS = { gba:'Game Boy Advance', nds:'Nintendo DS', n3ds:'Nintendo 3DS' };
+const EYEBROW = { gba:'Game Boy Advance · Génération 3',
+                  nds:'Nintendo DS · Générations 4 et 5' };
+
+function choisir(id){
+  if (id !== 'gba' && id !== 'nds') return;
+  plat = id;
+  document.querySelectorAll('.ch-card').forEach(c => c.classList.toggle('on', c.dataset.plat === id));
+  $('chooser').hidden = true;
+  const eb = document.querySelector('.masthead .eyebrow');
+  if (eb) eb.textContent = EYEBROW[id];
+  $('tabs').hidden = false;
+  majPlafond();
+  renderCompat(id);
+  show('shiny');
+}
+
+/* Le plafond du taux n'est pas le même partout : en 3G la constante
+   tient sur un octet d'instruction, en DS on réécrit la fonction. */
+function majPlafond(){
+  const n = document.querySelector('#pane-shiny .note');
+  if (!n) return;
+  n.innerHTML = plat === 'nds'
+    ? `En Nintendo DS, la fonction de test est unique dans le jeu : on peut la réécrire entièrement.
+       <b>N'importe quel taux est atteignable, jusqu'à 100 %.</b> Au-delà de 1/256 le logiciel remplace
+       la comparaison par une version élargie et t'indique le taux exactement obtenu.`
+    : `En génération 3, le maximum atteignable est <b>1/256</b> : la constante comparée tient sur un
+       octet d'instruction THUMB. Une valeur plus basse sera ramenée à ce plafond, et le logiciel te
+       dira exactement ce qu'il a appliqué.`;
+}
+
+document.addEventListener('click', e => {
+  const c = e.target.closest('.ch-card');
+  if (c && !c.disabled) choisir(c.dataset.plat);
+});
 
 /* ------------------------- ouverture ------------------------- */
 $('open').onclick = async () => {
@@ -18,6 +65,17 @@ $('open').onclick = async () => {
 
   ['shiny','wild'].forEach(t => document.querySelector(`.tab[data-t="${t}"]`).disabled = false);
   const info = window.PLATFORMS.describe(rom);
+
+  /* Le support annoncé et celui de la ROM doivent concorder, sinon on
+     appliquerait un traitement conçu pour une autre machine. */
+  if (info && plat && info.platform.id !== plat){
+    $('idcard').innerHTML = `<div class="msg"><b>Ce n'est pas une ROM ${NOMS[plat]}.</b>
+      Le fichier ouvert est reconnu comme ${info.platform.label}. Change de support en haut de page,
+      ou ouvre une autre ROM.</div>`;
+    ['shiny','wild'].forEach(t => document.querySelector(`.tab[data-t="${t}"]`).disabled = true);
+    return;
+  }
+  if (info && info.platform.id === 'nds') return ouvrirNds(f, info);
   if (!info) {
     $('idcard').innerHTML = `<div class="msg"><b>Support non reconnu.</b> Aucun en-tête Game Boy, GBA, DS ou 3DS valide. Vérifie que le fichier n'est pas encore compressé (.zip, .7z) ni chiffré.</div>`;
     return;
@@ -49,6 +107,41 @@ $('open').onclick = async () => {
   renderRates(); renderShiny(); renderWildStatus(); renderStarters(); renderKit();
 };
 
+
+/* ------------------------ ouverture DS ------------------------ *
+ * Le module DS travaille en un seul passage : il extrait arm9, le
+ * déplie si besoin, localise la fonction de test, neutralise la
+ * boucle anti-chromatique quand elle existe, puis reconstruit. On ne
+ * fait ici qu'un tour à blanc pour afficher ce qui a été trouvé ;
+ * la vraie écriture a lieu à l'export.                             */
+function ouvrirNds(f, info){
+  const h = window.NDS.readHeader(rom);
+  ndsRep = window.NDS.patchNds(rom, activeCount());
+
+  const trouve = ndsRep.hits.length > 0;
+  const boucles = (ndsRep.loops || []).length;
+
+  $('idcard').innerHTML = `<div class="panel"><dl class="rows">
+    <dt>Jeu</dt><dd>${h.title || '—'} · ${h.code}</dd>
+    <dt>Support</dt><dd>Nintendo DS · ${(rom.length/1048576).toFixed(0)} Mo</dd>
+    <dt>arm9</dt><dd>${window.NDS.isCompressed(window.NDS.extractArm9(rom))
+        ? 'comprimé (BLZ)' : 'en clair'}</dd>
+    <dt>Test de shiny</dt><dd>${trouve
+        ? 'localisé en 0x' + ndsRep.hits[0].off.toString(16).toUpperCase()
+        : '<span style="color:var(--red)">introuvable</span>'}</dd>
+    <dt>Boucle anti-shiny</dt><dd>${boucles
+        ? boucles + ' — sera neutralisée (génération 4)'
+        : 'absente (génération 5)'}</dd>
+  </dl></div>`;
+
+  shinyHits = ndsRep.hits;
+  table = null; encounters = []; starters = null; ballGift = null;
+
+  renderCompat('nds');
+  show('shiny');
+  renderRates(); renderShiny(); renderWildStatus();
+  syncExportButtons();
+}
 
 /* --------------------- cartes d'information -------------------- */
 function platformCard(info, f) {
@@ -256,6 +349,19 @@ function renderWildStatus() {
    disponible : une ROM dont la table de rencontres reste introuvable
    sort quand meme avec son taux de shiny modifie. */
 function buildPatched() {
+  /* En DS tout passe par patchNds : décompression, réécriture,
+     recompression et sommes de contrôle sont indissociables. */
+  if (plat === 'nds'){
+    const rep = window.NDS.patchNds(rom, activeCount());
+    ndsRep = rep;
+    if (!rep.ok) throw new Error(
+      'Traitement DS interrompu — ' +
+      (rep.steps.filter(x => !x.ok).map(x => x.name + (x.detail ? ' : ' + x.detail : '')).join(' ; ')
+       || 'raison inconnue'));
+    return { out: rep.rom, writes: [], shiny: rep.patches || [], start: { writes: [], species: [] },
+             kit: { writes: [], items: [] }, nds: rep };
+  }
+
   const out = rom.slice();
 
   const seed = $('seed').value || 'race';
@@ -295,8 +401,19 @@ function syncExportButtons() {
   ['gen', 'genips', 'shinygen', 'shinyips'].forEach(id => { if ($(id)) $(id).disabled = !ok; });
 }
 
-function summary({ writes, shiny, start, kit }) {
+function summary({ writes, shiny, start, kit, nds }) {
   const parts = [];
+  if (nds){
+    const rw = (nds.patches || []).find(p => p.type === 'reecriture');
+    const seuil = (nds.patches || []).find(p => p.type === 'seuil');
+    const boucles = (nds.patches || []).filter(p => p.type === 'boucle').length;
+    parts.push(rw
+      ? `Fonction de test réécrite — taux obtenu <b>1/${Math.round(65536 / rw.effectif)}</b>.`
+      : `Seuil porté à <b>${seuil ? seuil.N : '—'}</b>, soit un taux de <b>${rateLabel()}</b>.`);
+    if (boucles) parts.push(`${boucles} boucle anti-shiny neutralisée : sans ça, un taux élevé fige le jeu.`);
+    parts.push(`arm9 reconstruit et sommes de contrôle recalculées.`);
+    return parts.join(' ');
+  }
   parts.push(shiny.length
     ? `taux de shiny : ${shiny.length} octet(s) réécrit(s)`
     : `taux de shiny : rien à changer`);

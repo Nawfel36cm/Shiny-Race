@@ -30,6 +30,35 @@
   <button class="btn primary" id="open">Ouvrir une ROM</button>
 </header>
 
+<!-- ======================= CHOIX DU SUPPORT ======================= -->
+<section id="chooser">
+  <h2 class="ch-h">Sur quelle console joues-tu&nbsp;?</h2>
+  <p class="ch-p">Le traitement n'est pas le même selon la machine. Choisis d'abord, tu ouvriras ta ROM ensuite.</p>
+  <div class="ch-grid">
+    <button class="ch-card" data-plat="gba">
+      <span class="ch-tag">Génération 3</span>
+      <span class="ch-name">Game Boy Advance</span>
+      <span class="ch-games">Rubis, Saphir, Émeraude, Rouge Feu, Vert Feuille</span>
+      <span class="ch-feat ok">Taux de shiny jusqu'à 1/256</span>
+      <span class="ch-feat ok">Rencontres, starters, objets, badges</span>
+    </button>
+    <button class="ch-card" data-plat="nds">
+      <span class="ch-tag">Générations 4 et 5</span>
+      <span class="ch-name">Nintendo DS</span>
+      <span class="ch-games">Diamant, Perle, Platine, HeartGold, SoulSilver, Noir, Blanc, Noir 2, Blanc 2</span>
+      <span class="ch-feat ok">Taux de shiny jusqu'à 100 %</span>
+      <span class="ch-feat wait">Randomizer et objets en préparation</span>
+    </button>
+    <button class="ch-card off" data-plat="n3ds" disabled aria-disabled="true">
+      <span class="ch-tag">Générations 6 et 7</span>
+      <span class="ch-name">Nintendo 3DS</span>
+      <span class="ch-games">X, Y, Rubis Oméga, Saphir Alpha, Soleil, Lune, Ultra-Soleil, Ultra-Lune</span>
+      <span class="ch-feat no">Pas encore disponible</span>
+      <span class="ch-why">Ces jeux exigent un dump déchiffré et sortent en dossier à poser sur la carte SD, pas en fichier unique.</span>
+    </button>
+  </div>
+</section>
+
 <div id="idcard"></div>
 
 <nav class="tabs" id="tabs">
@@ -167,6 +196,7 @@
 <script src="games.js"></script>
 <script src="platforms.js"></script>
 <script src="rom.js"></script>
+<script src="nds.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

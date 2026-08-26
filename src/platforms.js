@@ -51,7 +51,7 @@ function detectPlatform(b) {
 const DRIVERS = {
   gb:   { label: 'Game Boy / Color — 1G et 2G',   shiny: { status: STATUS.PARTIAL }, wild: { status: STATUS.PLANNED } },
   gba:  { label: 'Game Boy Advance — 3G',         shiny: { status: STATUS.OK },      wild: { status: STATUS.OK } },
-  nds:  { label: 'Nintendo DS — 4G et 5G',        shiny: { status: STATUS.PLANNED }, wild: { status: STATUS.PLANNED } },
+  nds:  { label: 'Nintendo DS — 4G et 5G',        shiny: { status: STATUS.OK },      wild: { status: STATUS.PLANNED } },
   n3ds: { label: 'Nintendo 3DS — 6G et 7G',       shiny: { status: STATUS.PLANNED }, wild: { status: STATUS.PLANNED } }
 };
 

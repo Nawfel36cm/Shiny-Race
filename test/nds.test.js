@@ -129,62 +129,89 @@ console.log('\nRemplacement de arm9 et relocalisation');
 /* ---------- 4. détection du test de shininess ---------- */
 console.log('\nDétection du test de shininess');
 {
+  /* Signature relevée à l'identique sur les neuf jeux DS. Elle commence
+     au deuxième octet de la fonction, donc à une adresse impaire : c'est
+     précisément ce qu'un balayage sur les positions paires manque. */
+  const SIG = [0x4b,0x0a,0x04,0x19,0x40,0x03,0x40,0x00,0x04,0x1b,0x0c,0x00,0x0c,0x09,0x0c,0x58,0x40,0x12,0x0c,0x48,0x40,0x50,0x40,0x08,0x28];
+  const FN = 0x140;                       // adresse paire, comme dans les vrais jeux
   const b = new Uint8Array(0x400);
-  // THUMB : deux EOR puis cmp r0,#7 / bhi
-  let o = 0x40;
-  b[o]=0x41;b[o+1]=0x40; o+=2;
-  b[o]=0x42;b[o+1]=0x40; o+=2;
-  b[o]=0x07;b[o+1]=0x28; o+=2;
-  b[o]=0x02;b[o+1]=0xD8;
-  // ARM : EOR puis CMP r0,#8 / BCS
-  let a = 0x100;
-  b[a]=0x00;b[a+1]=0x00;b[a+2]=0x20;b[a+3]=0xE0; a+=4;   // eor r0,r0,r0
-  b[a]=0x08;b[a+1]=0x00;b[a+2]=0x50;b[a+3]=0xE3; a+=4;   // cmp r0,#8
-  b[a]=0x00;b[a+1]=0x00;b[a+2]=0x00;b[a+3]=0x2A;         // bcs
+  b[FN] = 0x09;                           // octet variable selon le jeu
+  SIG.forEach((v,i) => b[FN+1+i] = v);
+  b[FN+26] = 0x01; b[FN+27] = 0xD2;       // bhs, queue de fonction
+
   const hits = N.findShinyChecks(b);
-  ok('candidat THUMB trouvé', hits.some(h => h.mode==='thumb' && h.off===0x44), JSON.stringify(hits.find(h=>h.mode==='thumb')||{}));
-  ok('candidat ARM trouvé',   hits.some(h => h.mode==='arm'   && h.off===0x104), JSON.stringify(hits.find(h=>h.mode==='arm')||{}));
-  const p = N.shinyPatches(hits, 256);
-  ok('1/256 → immédiat 255 en forme "le"', p.some(x => x.hit.form==='le' && x.value===255));
-  ok('1/256 → plafonné en forme "lt"',      p.some(x => x.hit.form==='lt' && x.capped && x.value===255));
-  ok('1/512 → immédiat 127', N.shinyPatches(hits,128).some(x => x.hit.form==='le' && x.value===127));
+  ok('fonction localisée', hits.length === 1 && hits[0].off === FN,
+     JSON.stringify(hits));
+  ok('octet de seuil repéré', hits[0] && hits[0].seuil === FN+24 && hits[0].old === 8);
+
+  ok('1/8192 laisse le seuil inchangé', N.shinyPatches(hits, 8192).length === 0);
+  const p256 = N.shinyPatches(hits, 4096);
+  ok('1/4096 → un seul octet réécrit',
+     p256.length === 1 && p256[0].type === 'seuil' && p256[0].bytes[0] === 16);
+
+  const p100 = N.shinyPatches(hits, 1);
+  ok('100 % → réécriture de 26 octets',
+     p100.length === 1 && p100[0].type === 'reecriture' && p100[0].bytes.length === 26);
+  ok('100 % → queue de fonction préservée', p100[0].off + p100[0].bytes.length === FN+26);
+
+  ok('seuil 1/256 déborde l\'octet et bascule en réécriture',
+     N.seuilPour(256) === 256 && N.shinyPatches(hits,256)[0].type === 'reecriture');
+
+  const d = N.decomposer(N.seuilPour(10));
+  ok('1/10 reconstitué fidèlement', Math.round(65536/d.effectif) === 10,
+     `k=${d.k} m=${d.m} effectif=${d.effectif}`);
 }
 
-/* ---------- 5. garde-fou ---------- */
-console.log('\nGarde-fou');
+console.log('\nBoucle anti-chromatique');
 {
-  const raw = new Uint8Array(0x2000);
+  const b = new Uint8Array(0x200);
+  // eors r0,r2 / cmp r0,#8 / blo arrière  → la boucle qui figerait le jeu
+  b[0x40]=0x50; b[0x41]=0x40; b[0x42]=0x08; b[0x43]=0x28; b[0x44]=0xF0; b[0x45]=0xD3;
+  // même motif mais bhs et saut avant → c'est la fonction, à ne PAS toucher
+  b[0x80]=0x50; b[0x81]=0x40; b[0x82]=0x08; b[0x83]=0x28; b[0x84]=0x01; b[0x85]=0xD2;
+  const l = N.findAntiShinyLoops(b);
+  ok('boucle détectée', l.length === 1 && l[0].off === 0x44, JSON.stringify(l));
+  ok('fonction non confondue avec la boucle', !l.some(x => x.off === 0x84));
+  const pl = N.loopPatches(l);
+  ok('saut remplacé par une instruction neutre',
+     pl.length === 1 && pl[0].bytes[0] === 0xC0 && pl[0].bytes[1] === 0x46);
+}
+
+/* ---------- 5. chaîne complète ---------- */
+console.log('\nChaîne complète');
+{
+  const SIG = [0x4b,0x0a,0x04,0x19,0x40,0x03,0x40,0x00,0x04,0x1b,0x0c,0x00,0x0c,0x09,0x0c,0x58,0x40,0x12,0x0c,0x48,0x40,0x50,0x40,0x08,0x28];
+  const raw = new Uint8Array(0x4000);
   for (let i = 0; i < raw.length; i++) raw[i] = i % 71 < 30 ? (i*5)&255 : 0;
-  let o = 0x80;
-  raw[o]=0x41;raw[o+1]=0x40;raw[o+2]=0x42;raw[o+3]=0x40;
-  raw[o+4]=0x07;raw[o+5]=0x28;raw[o+6]=0x02;raw[o+7]=0xD8;
-  const arm9 = N.blzCompress(raw);
+  const FN = 0x2000;
+  raw[FN] = 0x09; SIG.forEach((v,i) => raw[FN+1+i] = v);
+  raw[FN+26] = 0x01; raw[FN+27] = 0xD2;
+
+  const KEEP = 0x1000;                    // tête laissée en clair, comme les vrais jeux
+  const arm9 = N.blzCompress(raw, KEEP);
+  ok('tête préservée par le compresseur',
+     eq(arm9.slice(0, KEEP), raw.slice(0, KEEP)));
+  ok('aller-retour du codec', eq(N.blzDecompress(arm9), raw));
+
   const { rom } = makeRom({ arm9 });
+  const r = N.patchNds(rom, 4096);
+  ok('la ROM est produite', r.ok === true && !!r.rom,
+     r.steps.filter(s=>!s.ok).map(s=>s.name).join(', ') || '—');
 
-  const r1 = N.patchNds(rom, 256);
-  ok('refuse d\'écrire sans validation', r1.ok === false && r1.rom === null);
-  ok('étape bloquante nommée',
-     r1.steps.some(s => !s.ok && /validé sur ROM réelle/.test(s.name)),
-     r1.steps.filter(s=>!s.ok).map(s=>s.name).join(', ') || '—');
-  ok('étapes précédentes passées',
-     r1.steps.filter(s => s.ok).length >= 5,
-     r1.steps.map(s => (s.ok?'✓':'✗')+s.name).join(' | '));
-
-  const r2 = N.patchNds(rom, 256, { allowUnverified: true });
-  ok('écrit une fois débloqué', r2.ok === true && !!r2.rom);
-  if (r2.rom){
-    const back = N.blzDecompress(N.extractArm9(r2.rom));
-    ok('immédiat effectivement modifié dans arm9', back[0x84] === 255, 'valeur = '+back[0x84]);
+  if (r.rom){
+    const back = N.blzDecompress(N.extractArm9(r.rom));
+    ok('seuil effectivement écrit', back[FN+24] === 16, 'valeur = '+back[FN+24]);
     ok('reste de arm9 inchangé',
-       eq(back.slice(0,0x84), raw.slice(0,0x84)) && eq(back.slice(0x85), raw.slice(0x85)));
-    const h = N.readHeader(r2.rom);
-    ok('CRC de la ROM patchée valide', h.headerCrc === N.crc16(r2.rom,0,0x15E));
+       eq(back.slice(0, FN+24), raw.slice(0, FN+24)) && eq(back.slice(FN+25), raw.slice(FN+25)));
+    const h = N.readHeader(r.rom);
+    ok('CRC de la ROM patchée valide', h.headerCrc === N.crc16(r.rom,0,0x15E));
+    ok('la ROM ne grossit pas', r.rom.length <= rom.length);
   }
 
   const plain = makeRom({ arm9: new Uint8Array(0x800) });
-  const r3 = N.patchNds(plain.rom, 256, { allowUnverified: true });
-  ok('arm9 en clair : pas de test trouvé, arrêt propre',
-     r3.ok === false && r3.steps.some(s => !s.ok && /shininess/.test(s.name)));
+  const r3 = N.patchNds(plain.rom, 256);
+  ok('arm9 sans signature : arrêt propre',
+     r3.ok === false && r3.steps.some(s => !s.ok && /fonction de test/.test(s.name)));
 }
 
 console.log(`\n${pass} réussis, ${fail} échoués\n`);
