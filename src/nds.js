@@ -1,3 +1,13 @@
+/* ⚠ PORTÉE. Ce fichier est chargé par une balise <script> dans la même
+   portée globale que rom.js, lequel déclare lui aussi rd32, readHeader,
+   findShinyChecks, shinyPatches, countFromDenominator et RATE_MAX_COUNT.
+   Sans cette fonction enveloppante, la deuxième déclaration lève une
+   SyntaxError : le fichier entier est rejeté, window.NDS n'existe pas,
+   et l'interface se comporte comme si aucune fonction n'était trouvée.
+   Tout ce qui suit reste donc privé ; seul API sort. */
+(function(){
+'use strict';
+
 /* =====================================================================
    nds.js — conteneur Nintendo DS : en-tête, sommes de contrôle,
    compression BLZ de arm9.bin, extraction et reconstruction.
@@ -463,3 +473,5 @@ const API = {
 /* Chargé à la fois par Node (tests) et par la fenêtre (interface). */
 if (typeof module !== 'undefined' && module.exports) module.exports = API;
 if (typeof window !== 'undefined') window.NDS = API;
+
+})();

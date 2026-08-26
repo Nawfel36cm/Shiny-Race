@@ -160,7 +160,21 @@ $('open').onclick = async () => {
  * fait ici qu'un tour à blanc pour afficher ce qui a été trouvé ;
  * la vraie écriture a lieu à l'export.                             */
 async function ouvrirNds(f, info){
+  /* Si nds.js n'a pas pu se charger, mieux vaut le dire franchement que
+     laisser l'interface prétendre qu'aucune fonction n'a été trouvée. */
+  if (!window.NDS){
+    $('idcard').innerHTML = `<div class="msg"><b>Module Nintendo DS non chargé.</b>
+      Le fichier nds.js n'a pas été pris en compte par l'application. Signale-le,
+      c'est un défaut d'installation et non un problème de ROM.</div>`;
+    return;
+  }
   const h = window.NDS.readHeader(rom);
+  if (!h){
+    $('idcard').innerHTML = `<div class="msg"><b>En-tête Nintendo DS illisible.</b>
+      Le fichier est reconnu comme une ROM DS mais son en-tête ne se lit pas.
+      Vérifie qu'il n'est ni tronqué ni encore dans une archive.</div>`;
+    return;
+  }
   ndsRep = window.NDS.patchNds(rom, activeCount());
 
   const trouve = ndsRep.hits.length > 0;
@@ -309,9 +323,17 @@ function renderShiny() {
   const has = shinyHits.length > 0;
   syncExportButtons();
   if (!has) {
+    /* Le rapport du module dit précisément où ça s'est arrêté. Sans ça,
+       une décompression ratée s'affichait comme « fonction introuvable ». */
+    const bloc = plat === 'nds' && ndsRep
+      ? (ndsRep.steps || []).find(x => !x.ok) : null;
     $('hits').innerHTML = plat === 'nds'
-      ? `<div class="msg"><b>Fonction de test introuvable.</b> Elle est identique sur les neuf jeux DS ;
-         son absence signale une ROM déjà modifiée, un ROM hack, ou un jeu hors 4G/5G.</div>`
+      ? (bloc && !/fonction de test/.test(bloc.name)
+          ? `<div class="msg"><b>Traitement interrompu à l'étape « ${bloc.name} ».</b>
+             ${bloc.detail ? bloc.detail + '<br>' : ''}
+             La fonction de test n'a donc jamais été cherchée.</div>`
+          : `<div class="msg"><b>Fonction de test introuvable.</b> Elle est identique sur les neuf jeux DS ;
+             son absence signale une ROM déjà modifiée, un ROM hack, ou un jeu hors 4G/5G.</div>`)
       : `<div class="msg"><b>Aucun test de shininess trouvé.</b> Normal sur une ROM déjà patchée, un ROM hack, ou un jeu hors génération 3.</div>`;
     return;
   }
