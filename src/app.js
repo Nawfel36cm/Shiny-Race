@@ -159,18 +159,27 @@ $('open').onclick = async () => {
  * boucle anti-chromatique quand elle existe, puis reconstruit. On ne
  * fait ici qu'un tour à blanc pour afficher ce qui a été trouvé ;
  * la vraie écriture a lieu à l'export.                             */
-function ouvrirNds(f, info){
+async function ouvrirNds(f, info){
   const h = window.NDS.readHeader(rom);
   ndsRep = window.NDS.patchNds(rom, activeCount());
 
   const trouve = ndsRep.hits.length > 0;
   const boucles = (ndsRep.loops || []).length;
+  const jeu = window.GAMES.ndsGame(h.code);
+  const sha = await R.sha1(f.bytes).catch(() => '—');
 
+  /* Le jeu reconnu est la première ligne, volontairement : c'est le
+     contrôle le plus rapide qu'un fichier est bien celui qu'on croit.
+     Un code inconnu est annoncé comme tel plutôt que deviné. */
   $('idcard').innerHTML = `<div class="panel"><dl class="rows">
-    <dt>Jeu</dt><dd>${h.title || '—'} · ${h.code}</dd>
-    <dt>Support</dt><dd>Nintendo DS · ${(rom.length/1048576).toFixed(0)} Mo</dd>
+    <dt>Jeu</dt><dd>${jeu
+        ? `<b>${jeu.nom}</b> · ${jeu.region || 'région inconnue'} · génération ${jeu.gen}`
+        : `<span style="color:var(--red)">Jeu non reconnu</span> — code ${h.code || '????'}.
+           Le traitement peut être tenté, mais il n'a été vérifié que sur les neuf jeux Pokémon DS.`}</dd>
+    <dt>Code</dt><dd>${h.code} · « ${h.title || '—'} » · ${(rom.length/1048576).toFixed(0)} Mo</dd>
+    <dt>SHA-1</dt><dd style="font-size:11px">${sha}</dd>
     <dt>arm9</dt><dd>${window.NDS.isCompressed(window.NDS.extractArm9(rom))
-        ? 'comprimé (BLZ)' : 'en clair'}</dd>
+        ? 'comprimé en BLZ — sera déplié puis recomprimé' : 'en clair'}</dd>
     <dt>Test de shiny</dt><dd>${trouve
         ? 'localisé en 0x' + ndsRep.hits[0].off.toString(16).toUpperCase()
         : '<span style="color:var(--red)">introuvable</span>'}</dd>
@@ -300,7 +309,37 @@ function renderShiny() {
   const has = shinyHits.length > 0;
   syncExportButtons();
   if (!has) {
-    $('hits').innerHTML = `<div class="msg"><b>Aucun test de shininess trouvé.</b> Normal sur une ROM déjà patchée, un ROM hack, ou un jeu hors génération 3.</div>`;
+    $('hits').innerHTML = plat === 'nds'
+      ? `<div class="msg"><b>Fonction de test introuvable.</b> Elle est identique sur les neuf jeux DS ;
+         son absence signale une ROM déjà modifiée, un ROM hack, ou un jeu hors 4G/5G.</div>`
+      : `<div class="msg"><b>Aucun test de shininess trouvé.</b> Normal sur une ROM déjà patchée, un ROM hack, ou un jeu hors génération 3.</div>`;
+    return;
+  }
+
+  /* Les résultats DS n'ont pas la même forme que ceux de la 3G : une
+     seule fonction au lieu de plusieurs occurrences, et la modification
+     peut porter sur un octet ou sur vingt-six. */
+  if (plat === 'nds'){
+    const c = activeCount();
+    const p = window.NDS.shinyPatches(shinyHits, c)[0];
+    const h = shinyHits[0];
+    const obtenu = !p ? 8192
+      : p.type === 'reecriture' ? Math.round(65536 / p.effectif) : Math.round(65536 / p.N);
+    const boucles = ndsRep && ndsRep.loops ? ndsRep.loops.length : 0;
+    $('hits').innerHTML = `<div class="hit">
+      <div class="hit-top"><span class="addr">0x${hex(h.off, 6)}</span>
+        <span class="tag">signature vérifiée sur les 9 jeux</span></div>
+      <div class="asm">
+        <span class="lbl">avant</span><span><span class="was">cmp r0, #${h.old}</span> ; bhs — 1/${Math.round(65536 / h.old)}</span>
+        <span class="lbl">après</span><span><span class="now">${
+          !p ? 'inchangé' : p.type === 'reecriture'
+            ? 'fonction réécrite (26 octets)' : 'cmp r0, #' + p.bytes[0]}</span> ; 1/${obtenu}</span>
+        <span class="lbl">portée</span><span>${!p ? '0' : p.bytes.length} octet(s) dans arm9${
+          boucles ? ` · ${boucles} boucle anti-shiny neutralisée` : ''}</span>
+      </div></div>
+      <p class="note">${p && p.type === 'reecriture'
+        ? `Au-delà de 1/256 la comparaison est élargie : le taux obtenu procède par paliers, d'où le 1/${obtenu} affiché.`
+        : `Un seul octet suffit jusqu'à 1/256.`} La fonction est unique dans le jeu et appelée de trois à huit fois selon le titre : la modifier couvre tous les cas.</p>`;
     return;
   }
   const list = shinyList();
@@ -404,6 +443,17 @@ function renderStarters() {
 }
 
 function renderWildStatus() {
+  /* R.readHeader ne sait lire qu'un en-tête GBA et rend null ailleurs.
+     L'appeler sur une ROM DS levait une erreur qui interrompait tout le
+     chargement — et laissait le bouton d'export désactivé sans le
+     moindre message. */
+  if (plat === 'nds'){
+    $('wildstatus').innerHTML = `<div class="msg"><b>Randomizer indisponible en Nintendo DS.</b>
+      <p>Les rencontres, les starters et les objets sont rangés dans les archives internes de la ROM,
+      pas dans le code. Le taux de shiny, lui, <b>est pleinement opérationnel</b> depuis l'onglet précédent.</p></div>`;
+    syncExportButtons();
+    return;
+  }
   const ok = table && encounters.length;
   $('wildstatus').innerHTML = ok
     ? `<div class="msg good"><b>${table.count} zones trouvées</b> à partir de 0x${hex(table.start, 6)}, soit ${encounters.length} emplacements de rencontre modifiables (herbe, eau, éclate-roc, pêche).</div>`

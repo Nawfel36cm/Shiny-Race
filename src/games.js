@@ -16,14 +16,14 @@ const GENS = [
   },
   {
     gen: 4, platform: 'nds', label: 'Nintendo DS', rate: '1/8192',
-    shiny: 'prevu', rando: 'upr',
-    why: "Même formule qu'en 3G, mais le code est dans arm9.bin, compressé. Il faut décompresser, patcher, reconstruire.",
+    shiny: 'natif', rando: 'upr',
+    why: "Fonction de test unique, réécrite sur place. Trois jeux ont un arm9 en clair, deux sont comprimés en BLZ ; le logiciel détecte le cas au lieu de le supposer.",
     games: ['Diamant', 'Perle', 'Platine', 'Or HeartGold', 'Argent SoulSilver']
   },
   {
     gen: 5, platform: 'nds', label: 'Nintendo DS', rate: '1/8192',
-    shiny: 'prevu', rando: 'upr',
-    why: "Chaîne identique à la 4G.",
+    shiny: 'natif', rando: 'upr',
+    why: "Même fonction qu'en 4G, à un octet près. Pas de boucle anti-chromatique, contrairement à la 4G.",
     games: ['Noir', 'Blanc', 'Noir 2', 'Blanc 2']
   },
   {
@@ -40,6 +40,40 @@ const GENS = [
   }
 ];
 
+/* ---------------------------------------------------------------- *
+ *  Identification des jeux DS par leur code de cartouche            *
+ *                                                                   *
+ *  Les trois premières lettres désignent le jeu, la quatrième la    *
+ *  région. On n'affiche jamais un nom deviné : un code inconnu est  *
+ *  annoncé comme tel, pour que tu voies tout de suite si le fichier *
+ *  ouvert n'est pas celui que tu croyais.                           *
+ * ---------------------------------------------------------------- */
+const NDS_TITRES = {
+  ADA: { nom: 'Pokémon Diamant',            gen: 4 },
+  APA: { nom: 'Pokémon Perle',              gen: 4 },
+  CPU: { nom: 'Pokémon Platine',            gen: 4 },
+  IPK: { nom: 'Pokémon Or HeartGold',       gen: 4 },
+  IPG: { nom: 'Pokémon Argent SoulSilver',  gen: 4 },
+  IRB: { nom: 'Pokémon Version Noire',      gen: 5 },
+  IRA: { nom: 'Pokémon Version Blanche',    gen: 5 },
+  IRE: { nom: 'Pokémon Version Noire 2',    gen: 5 },
+  IRD: { nom: 'Pokémon Version Blanche 2',  gen: 5 }
+};
+const NDS_REGIONS = {
+  F: 'France', E: 'Amérique du Nord', O: 'Europe', P: 'Europe',
+  D: 'Allemagne', I: 'Italie', S: 'Espagne', J: 'Japon', K: 'Corée'
+};
+
+/** Code de cartouche (ex. « CPUF ») → jeu reconnu, ou null. */
+function ndsGame(code){
+  const c = String(code || '').toUpperCase().trim();
+  if (c.length < 3) return null;
+  const t = NDS_TITRES[c.slice(0, 3)];
+  if (!t) return null;
+  const r = NDS_REGIONS[c[3]] || null;
+  return { nom: t.nom, gen: t.gen, region: r, code: c, connu: true };
+}
+
 const BADGES = {
   natif:      { text: 'natif',     cls: 'ok',   tip: "Écrit dans ce logiciel, sans moteur externe." },
   upr:        { text: 'intégré',   cls: 'ok',   tip: "Moteur livré avec l'application, onglet Randomizer complet." },
@@ -52,4 +86,4 @@ function gensFor(platformId) {
   return GENS.filter(g => g.platform === platformId);
 }
 
-window.GAMES = { GENS, BADGES, gensFor };
+window.GAMES = { GENS, BADGES, gensFor, NDS_TITRES, NDS_REGIONS, ndsGame };
