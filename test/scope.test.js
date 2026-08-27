@@ -31,7 +31,7 @@ const ok = (name, cond, extra = '') => {
 const SRC = path.join(__dirname, '..', 'src');
 /* L'ordre est celui des balises <script> dans index.html. Le changer ici
    sans le changer là-bas ferait passer un test qui ne prouve plus rien. */
-const FICHIERS = ['games.js', 'platforms.js', 'rom.js', 'nds.js'];
+const FICHIERS = ['games.js', 'platforms.js', 'rom.js', 'nds.js', 'upr-modes.js'];
 
 console.log('\nChargement navigateur — portée globale partagée');
 
@@ -61,6 +61,7 @@ ok('window.GAMES existe',     !!ctx.GAMES);
 ok('window.PLATFORMS existe', !!ctx.PLATFORMS);
 ok('window.ROM existe',       !!ctx.ROM);
 ok('window.NDS existe',       !!ctx.NDS, ctx.NDS ? '' : '← le symptôme exact du bug de portée');
+ok('window.UPR_MODES existe', !!ctx.UPR_MODES);
 
 /* Les deux modules doivent rester distincts : si nds.js avait écrasé les
    fonctions de rom.js, l'interface appliquerait le traitement DS à une

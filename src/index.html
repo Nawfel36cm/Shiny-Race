@@ -63,7 +63,8 @@
 
 <nav class="tabs" id="tabs">
   <button class="tab" data-t="shiny" aria-selected="true">Taux de shiny</button>
-  <button class="tab" data-t="wild" aria-selected="false">Randomizer</button>
+  <button class="tab" data-t="wild" aria-selected="false">Randomizer intégré</button>
+  <button class="tab" data-t="upr" aria-selected="false">Randomizer complet</button>
   <button class="tab" data-t="compat" aria-selected="false">Compatibilité</button>
 </nav>
 
@@ -164,6 +165,54 @@
   Si la table de rencontres reste introuvable, l'export se fait quand même avec le seul taux de shiny.</p>
 </section>
 
+
+<!-- ====================== RANDOMIZER COMPLET ====================== -->
+<section class="pane" id="pane-upr" hidden>
+
+  <div class="field">
+    <label>Moteur de randomisation</label>
+    <div id="uprstate"></div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn" id="uprinstall">Installer le randomizer</button>
+      <button class="btn ghost small" id="uprremove" hidden>Désinstaller</button>
+    </div>
+    <div id="uprprog" style="margin-top:10px"></div>
+    <p class="note">Le moteur est téléchargé depuis le dépôt officiel du projet, au premier usage.
+    Il n'est pas livré avec l'application : l'archive contient un environnement Java complet, et
+    sa licence impose des obligations de redistribution qu'on évite en te laissant le récupérer
+    à la source. Rien n'est envoyé nulle part, et aucun jeu n'est téléchargé.</p>
+  </div>
+
+  <div class="field">
+    <label>Rencontres sauvages</label>
+    <div class="chips" id="uprmodes"></div>
+    <p class="note" id="uprmodehelp"></p>
+  </div>
+
+  <div class="field">
+    <label>Graine</label>
+    <div class="row">
+      <input id="uprseed" type="text" placeholder="laisser vide pour tirer au sort">
+      <button class="btn ghost small" id="uprreseed">Nouvelle graine</button>
+    </div>
+    <p class="note">Deux joueurs qui saisissent la même graine sur la même ROM obtiennent
+    exactement la même randomisation. C'est ce qui rend une course comparable.</p>
+  </div>
+
+  <div class="field">
+    <label>Générer</label>
+    <div class="row">
+      <button class="btn primary" id="uprgo" disabled>Randomiser puis appliquer le taux de shiny</button>
+    </div>
+    <p class="note"><b>L'ordre n'est pas négociable.</b> Le randomizer reconstruit la ROM entière,
+    arm9 compris. Appliqué après notre modification, il l'effacerait sans le moindre message.
+    Ce bouton fait donc les deux dans le bon sens : randomisation d'abord, taux de shiny ensuite.</p>
+    <div id="uprout" style="margin-top:10px"></div>
+    <pre class="log" id="uprlog" style="display:none"></pre>
+  </div>
+
+</section>
+
 <section class="pane" id="pane-compat" hidden>
   <div id="compat"></div>
 </section>
@@ -197,6 +246,7 @@
 <script src="platforms.js"></script>
 <script src="rom.js"></script>
 <script src="nds.js"></script>
+<script src="upr-modes.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

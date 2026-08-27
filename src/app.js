@@ -261,7 +261,7 @@ function renderCompat(activePlatform) {
 /* --------------------------- onglets -------------------------- */
 function show(t) {
   document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', b.dataset.t === t));
-  ['shiny', 'wild', 'compat'].forEach(p => $('pane-' + p).hidden = p !== t);
+  ['shiny', 'wild', 'upr', 'compat'].forEach(p => { const e = $('pane-' + p); if (e) e.hidden = p !== t; });
 }
 document.querySelectorAll('.tab').forEach(b => b.onclick = () => { if (!b.disabled) show(b.dataset.t); });
 
@@ -937,4 +937,203 @@ $('diagcopy').onclick = async () => {
   el.textContent = 'version ' + v;
   const p = document.getElementById('updver');
   if (p) p.textContent = 'version ' + v;
+})();
+
+/* =====================================================================
+   RANDOMIZER COMPLET (moteur externe FVX)
+
+   Trois responsabilités, et une seule qui compte vraiment :
+     1. installer le moteur au premier usage, avec une progression
+        visible — cinquante mégaoctets puis six cents fichiers ;
+     2. proposer les trois modes de rencontres, et rien d'autre ;
+     3. GARANTIR L'ORDRE. Le randomizer reconstruit la ROM entière,
+        arm9 compris. Notre modification appliquée avant serait effacée
+        sans message. Un seul bouton fait donc les deux, dans le bon
+        sens, pour qu'aucun enchaînement manuel ne puisse se tromper.
+   ===================================================================== */
+(function randomizerComplet(){
+  const M = window.UPR_MODES;
+  if (!M || !window.api || !window.api.upr) return;
+
+  let etat = null, mode = M.UPR_MODES[0].id, occupe = false;
+
+  const box = id => $(id);
+  const dire = (id, html, cls) => {
+    const e = box(id); if (e) e.innerHTML = `<div class="msg${cls ? ' ' + cls : ''}">${html}</div>`;
+  };
+  const barre = (titre, pourcent, detail) =>
+    `<div class="msg working"><b>${titre}</b>
+       <div class="bar"><span${pourcent >= 0 ? ` style="width:${Math.max(4,Math.min(100,pourcent))}%;animation:none"` : ''}></span></div>
+       ${detail ? `<p>${detail}</p>` : ''}</div>`;
+  const mo = n => (n / 1048576).toFixed(1).replace('.', ',') + ' Mo';
+
+  /* ------------------------- état du moteur ------------------------- */
+  async function rafraichir(){
+    try { etat = await window.api.upr.state(); }
+    catch (e){ dire('uprstate', `<b>État illisible.</b> ${e.message}`); return; }
+
+    const bi = $('uprinstall'), br = $('uprremove');
+    if (!etat.supporte){
+      dire('uprstate', `<b>Système non couvert par le randomizer.</b>
+        Le projet publie des archives pour Windows, macOS et Linux, en x86 et ARM.
+        Aucune ne correspond à cette machine.`);
+      bi.disabled = true; br.hidden = true;
+    } else if (etat.installe){
+      dire('uprstate', `<b>Randomizer installé</b> — version ${etat.version}.
+        ${etat.javaEmbarque
+          ? 'Il utilise le Java livré dans son archive : rien à installer sur ta machine.'
+          : "Attention : le Java livré n'a pas été trouvé, c'est celui du système qui servira."}
+        <p class="dimtxt">${etat.dossier}</p>`, 'good');
+      bi.textContent = 'Réinstaller'; bi.disabled = false; br.hidden = false;
+    } else {
+      dire('uprstate', `<b>Randomizer non installé.</b>
+        L'archive fait environ ${mo(etat.tailleApprox)} et se décompresse en un dossier
+        d'environ 130 Mo, Java compris. Elle n'est téléchargée qu'une fois.
+        <p class="dimtxt">${etat.asset}</p>`);
+      bi.textContent = 'Installer le randomizer'; bi.disabled = false; br.hidden = true;
+    }
+    majBouton();
+  }
+
+  /* ------------------------- installation --------------------------- */
+  const ETAPES = {
+    telechargement: 'Téléchargement du randomizer…',
+    extraction:     'Décompression…',
+    droits:         'Pose des droits d\u2019exécution…',
+    fini:           'Vérification…'
+  };
+  window.api.upr.onProgress(m => {
+    const d = m.etape === 'telechargement' && m.total
+      ? `${mo(m.recu)} sur ${mo(m.total)}`
+      : m.etape === 'extraction' && m.total ? `${m.fait} fichiers sur ${m.total}` : '';
+    $('uprprog').innerHTML = barre(ETAPES[m.etape] || 'En cours…', m.pourcent, d);
+  });
+
+  $('uprinstall').onclick = async () => {
+    if (occupe) return;
+    occupe = true; $('uprinstall').disabled = true; $('uprremove').hidden = true;
+    $('uprprog').innerHTML = barre('Préparation…', 0, '');
+    const r = await window.api.upr.install();
+    occupe = false;
+    if (r.ok){
+      $('uprprog').innerHTML = `<div class="msg good"><b>Installation terminée.</b>
+        ${r.fichiers} fichiers, ${r.marques} rendus exécutables.
+        <p class="dimtxt">${(r.java || '').replace(/[<>&]/g,'')}</p></div>`;
+    } else {
+      /* Le dossier a été effacé : on ne laisse jamais une installation
+         à moitié faite, qui échouerait plus tard sans qu'on comprenne. */
+      $('uprprog').innerHTML = `<div class="msg"><b>Installation impossible.</b>
+        ${String(r.err || '').replace(/[<>&]/g,'')}
+        <p>Rien n'a été laissé sur le disque. Tu peux réessayer, ou récupérer l'archive
+        à la main depuis le dépôt du projet.</p></div>`;
+    }
+    rafraichir();
+  };
+
+  $('uprremove').onclick = async () => { await window.api.upr.remove(); $('uprprog').innerHTML = ''; rafraichir(); };
+
+  /* ---------------------------- modes ------------------------------- */
+  function renderModes(){
+    $('uprmodes').innerHTML = M.UPR_MODES.map(m =>
+      `<button class="chip" data-m="${m.id}" aria-pressed="${m.id === mode}">${m.label}</button>`).join('');
+    $('uprmodes').querySelectorAll('.chip').forEach(b => b.onclick = () => {
+      mode = b.dataset.m; renderModes();
+    });
+    $('uprmodehelp').innerHTML = M.uprMode(mode).aide;
+  }
+
+  $('uprreseed').onclick = () => { $('uprseed').value = Math.random().toString(36).slice(2, 10); };
+
+  /* --------------------------- génération --------------------------- */
+  function majBouton(){
+    const b = $('uprgo');
+    if (!b) return;
+    b.disabled = occupe || !etat || !etat.installe || !rom || !romPath;
+    b.title = !etat || !etat.installe ? "Installe d'abord le moteur"
+            : !rom ? "Ouvre d'abord une ROM" : '';
+  }
+
+  window.api.upr.onLog(l => {
+    const e = $('uprlog');
+    e.style.display = 'block';
+    e.textContent = (e.textContent + l).slice(-6000);
+    e.scrollTop = e.scrollHeight;
+  });
+
+  $('uprgo').onclick = async () => {
+    if (occupe) return;
+    occupe = true; majBouton();
+    $('uprlog').textContent = ''; $('uprlog').style.display = 'none';
+    $('uprout').innerHTML = barre('Randomisation en cours…', -1,
+      'Le moteur relit la ROM entière et la reconstruit. Compte une à plusieurs minutes.');
+
+    const graine = $('uprseed').value.trim() || Math.random().toString(36).slice(2, 10);
+    $('uprseed').value = graine;
+
+    const r = await window.api.upr.run({
+      input: romPath, settings: M.uprMode(mode).settings, seed: graine, log: false
+    });
+
+    if (!r.ok){
+      occupe = false; majBouton();
+      $('uprout').innerHTML = `<div class="msg"><b>Randomisation interrompue.</b>
+        ${String(r.err || '').replace(/[<>&]/g,'')}
+        <p>Rien n'a été écrit. Ta ROM d'origine est intacte.</p></div>`;
+      return;
+    }
+
+    /* ÉTAPE 2 — notre modification, sur la ROM randomisée et pas sur
+       l'originale. C'est tout l'objet de ce bouton. */
+    $('uprout').innerHTML = barre('Application du taux de shiny…', -1,
+      'Sur la ROM randomisée, jamais sur l\u2019originale.');
+    await attendreLeDessin();
+
+    const randomisee = new Uint8Array(r.bytes);
+    let sortie = randomisee, resume = '';
+    try {
+      if (plat === 'nds'){
+        const rep = window.NDS.patchNds(randomisee, activeCount());
+        if (!rep.ok) throw new Error(rep.steps.filter(x => !x.ok)
+          .map(x => x.name + (x.detail ? ' : ' + x.detail : '')).join(' ; ') || 'raison inconnue');
+        sortie = rep.rom;
+        resume = `taux de shiny appliqué sur la ROM randomisée`;
+      } else {
+        const hits = R.findShinyChecks(randomisee);
+        if (!hits.length) throw new Error("aucun test de shininess trouvé dans la ROM randomisée");
+        R.shinyPatches(hits, activeCount()).forEach(p => randomisee[p.off] = p.value);
+        sortie = randomisee;
+        resume = `${hits.length} test(s) de shininess réécrit(s)`;
+      }
+    } catch (e){
+      occupe = false; majBouton();
+      $('uprout').innerHTML = `<div class="msg"><b>Randomisation réussie, taux de shiny impossible.</b>
+        ${String(e.message || e).replace(/[<>&]/g,'')}
+        <p>Rien n'a été enregistré : une ROM randomisée sans le taux de shiny serait
+        inutilisable pour une course, et te ferait croire que tout s'est bien passé.</p></div>`;
+      return;
+    }
+
+    const ext = plat === 'nds' ? 'nds' : 'gba';
+    const nom = romName.replace(/\.[^.]+$/, '') + ` [${M.uprMode(mode).id} ${graine} ${rateLabel()}].${ext}`;
+    const p = await window.api.saveBytes({
+      data: sortie, defaultName: nom,
+      filters: [{ name: plat === 'nds' ? 'ROM Nintendo DS' : 'ROM Game Boy Advance', extensions: [ext] },
+                { name: 'Tous les fichiers', extensions: ['*'] }]
+    });
+
+    occupe = false; majBouton();
+    if (!p){ $('uprout').innerHTML = `<div class="msg">Enregistrement annulé. Rien n'a été écrit.</div>`; return; }
+    $('uprout').innerHTML = `<div class="msg good"><b>Terminé.</b>
+      Rencontres randomisées en mode « ${M.uprMode(mode).label} », graine <b>${graine}</b>, puis ${resume}.
+      <p>Donne cette graine et ce mode aux autres joueurs : sur la même ROM d'origine,
+      ils obtiendront exactement la même randomisation.</p></div>`;
+    $('uprout').querySelector('.msg').onclick = () => window.api.reveal(p);
+  };
+
+  /* Le bouton dépend de la ROM chargée : on le rafraîchit à chaque
+     passage sur l'onglet plutôt que d'espionner toutes les ouvertures. */
+  document.querySelector('.tab[data-t="upr"]').addEventListener('click', () => { rafraichir(); majBouton(); });
+
+  renderModes();
+  rafraichir();
 })();
