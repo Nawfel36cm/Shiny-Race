@@ -208,3 +208,27 @@ ul.tight b{color:var(--gold)}
 .ch-feat.no::before{content:"—";color:var(--dim-2,#888)}
 .ch-why{font-size:12px;color:var(--dim-2,#888);line-height:1.45;margin-top:2px}
 .ch-back{margin-top:14px}
+
+/* ---------------------------------------------------------------- *
+ *  Travail en cours                                                *
+ *                                                                  *
+ *  La recompression de arm9 est synchrone. Elle est rapide, mais    *
+ *  pas instantanée sur les six jeux DS comprimés : sans repère      *
+ *  visible, une fenêtre qui ne répond pas se lit comme un plantage. *
+ *  Barre indéterminée : on ne connaît pas l'avancement réel, et     *
+ *  afficher un pourcentage inventé serait pire que rien.            *
+ * ---------------------------------------------------------------- */
+.msg.working{border-left-color:var(--gold);background:rgba(255,206,58,.08)}
+.msg.working b{color:var(--gold)}
+.msg .bar{height:6px;border-radius:99px;background:rgba(255,255,255,.09);
+  overflow:hidden;margin:11px 0 3px}
+.msg .bar span{display:block;height:100%;width:38%;border-radius:99px;
+  background:linear-gradient(90deg,var(--flame),var(--gold));
+  animation:glisse 1.15s ease-in-out infinite}
+@keyframes glisse{
+  0%{transform:translateX(-100%)}
+  100%{transform:translateX(305%)}
+}
+@media (prefers-reduced-motion:reduce){
+  .msg .bar span{animation:none;width:100%;opacity:.55}
+}

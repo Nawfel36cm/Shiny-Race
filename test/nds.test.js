@@ -191,10 +191,31 @@ console.log('\nChaîne complète');
   raw[FN+26] = 0x01; raw[FN+27] = 0xD2;
 
   const KEEP = 0x1000;                    // tête laissée en clair, comme les vrais jeux
+
+  /* ModuleParams dans la tête en clair, comme dans les vrais jeux. Le
+     champ de fin doit désigner la fin de l'arm9 comprimé — dont on ne
+     connaît la taille qu'après compression. On comprime donc une
+     première fois pour la mesurer, on écrit le champ, puis on recomprime :
+     le champ vit dans la tête recopiée telle quelle, la taille ne bouge
+     donc pas. */
+  const MP = 0x800;                       // adresse du repère 0xDEC00621
+  const poserMP = (buf, fin) => {
+    [0x21,0x06,0xC0,0xDE,0xDE,0xC0,0x06,0x21].forEach((v,i) => buf[MP+i] = v);
+    const o = MP - 8;
+    buf[o] = fin & 255; buf[o+1] = fin>>8 & 255; buf[o+2] = fin>>16 & 255; buf[o+3] = fin>>>24 & 255;
+  };
+  poserMP(raw, 0);
+  const tailleComprimee = N.blzCompress(raw, KEEP).length;
+  poserMP(raw, tailleComprimee);          // arm9Ram vaut 0 dans la ROM d'essai
+
   const arm9 = N.blzCompress(raw, KEEP);
+  ok('la taille ne bouge pas après écriture du champ', arm9.length === tailleComprimee);
   ok('tête préservée par le compresseur',
      eq(arm9.slice(0, KEEP), raw.slice(0, KEEP)));
   ok('aller-retour du codec', eq(N.blzDecompress(arm9), raw));
+
+  const mp = N.findModuleParams(arm9, KEEP);
+  ok('ModuleParams localisés dans la tête en clair', mp.ok && mp.mark === MP);
 
   const { rom } = makeRom({ arm9 });
   const r = N.patchNds(rom, 16);
@@ -209,12 +230,81 @@ console.log('\nChaîne complète');
     const h = N.readHeader(r.rom);
     ok('CRC de la ROM patchée valide', h.headerCrc === N.crc16(r.rom,0,0x15E));
     ok('la ROM ne grossit pas', r.rom.length <= rom.length);
+
+    /* ⚠ Le test qui manquait, et qui aurait attrapé les six jeux qui ne
+       démarraient pas. Le champ doit désigner la fin du NOUVEL arm9. */
+    const a9 = N.extractArm9(r.rom);
+    const mp2 = N.findModuleParams(a9, KEEP);
+    ok('ModuleParams toujours lisibles après patch', mp2.ok);
+    ok('fin comprimée recalée sur la nouvelle taille',
+       mp2.ok && mp2.endValue === a9.length,
+       mp2.ok ? `champ = ${mp2.endValue}, arm9 = ${a9.length}` : '');
+    ok('le champ a bien changé de valeur',
+       mp2.ok && mp2.endValue !== tailleComprimee || a9.length === tailleComprimee,
+       `avant ${tailleComprimee}, apres ${mp2.ok ? mp2.endValue : '?'}`);
+    ok('rapport : recalage signalé',
+       !!r.moduleParams && r.moduleParams.apres === a9.length);
+  }
+
+  /* À 100 %, ce sont vingt-six octets qui sont réécrits, pas un : la
+     taille comprimée a de bonnes chances de changer. C'est le cas qui
+     compte, puisque c'est le décalage qui empêchait le jeu de démarrer. */
+  {
+    const r2 = N.patchNds(rom, 65536);
+    ok('100 % : la ROM est produite', r2.ok === true,
+       r2.steps.filter(s=>!s.ok).map(s=>s.name).join(', ') || '—');
+    if (r2.rom){
+      const a2 = N.extractArm9(r2.rom);
+      const m2 = N.findModuleParams(a2, KEEP);
+      ok('100 % : fin comprimée recalée', m2.ok && m2.endValue === a2.length,
+         m2.ok ? `champ = ${m2.endValue}, arm9 = ${a2.length}, origine ${tailleComprimee}` : '');
+      /* La réécriture pose `cmp r0,#m` en onzième mot, soit l'octet
+         d'immédiat en +20 et l'opcode 0x28 en +21. */
+      const deplie = N.blzDecompress(a2);
+      const d = N.decomposer(65536);
+      ok('100 % : le patch se relit après dépliage',
+         deplie[FN + 21] === 0x28 && deplie[FN + 20] === (d.m & 0xFF),
+         `cmp r0,#${deplie[FN + 20]} (attendu ${d.m}), k=${d.k}`);
+    }
   }
 
   const plain = makeRom({ arm9: new Uint8Array(0x800) });
   const r3 = N.patchNds(plain.rom, 256);
   ok('arm9 sans signature : arrêt propre',
      r3.ok === false && r3.steps.some(s => !s.ok && /fonction de test/.test(s.name)));
+
+  /* Mode analyse : c'est celui qu'emprunte l'ouverture d'une ROM. Il doit
+     trouver la fonction sans jamais recomprimer, donc sans rendre de ROM. */
+  const r4 = N.patchNds(rom, 16, { analyzeOnly: true });
+  ok('analyse seule : fonction localisée', r4.ok === true && r4.hits.length > 0);
+  ok('analyse seule : aucune ROM produite', r4.rom === null && r4.analyzeOnly === true);
+  ok('analyse seule : aucune recompression',
+     !r4.steps.some(s => /reconstruit|relecture/.test(s.name)));
+}
+
+/* ------------------------------------------------------------------ *
+ *  Vitesse du compresseur                                            *
+ *                                                                    *
+ *  La version d'origine essayait les 4096 distances à chaque octet et *
+ *  mettait une vingtaine de secondes sur un arm9 d'un mégaoctet : la  *
+ *  fenêtre restait figée et l'utilisateur concluait à un plantage.    *
+ *  Le seuil est large à dessein — il n'attrape pas une machine lente, *
+ *  seulement un retour à l'algorithme quadratique.                    *
+ * ------------------------------------------------------------------ */
+console.log('\nVitesse du compresseur');
+{
+  const T = 512 * 1024;
+  const raw = new Uint8Array(T);
+  let s = 7;
+  const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) >>> 24;
+  for (let i = 0; i < T; i++)
+    raw[i] = (i % 211) < 90 ? [0x00,0x46,0xC0,0x1C,0x68,0x60,0xF0,0xB5][(i>>1)&7] : rnd();
+
+  const t0 = Date.now();
+  const enc = N.blzCompress(raw, 0x4000);
+  const ms = Date.now() - t0;
+  ok('512 Ko comprimés en moins de 5 s', ms < 5000, ms + ' ms');
+  ok('résultat toujours exact', eq(N.blzDecompress(enc), raw));
 }
 
 console.log(`\n${pass} réussis, ${fail} échoués\n`);

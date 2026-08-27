@@ -132,35 +132,68 @@ function blzDecompress(b){
  * indémarrable : plus rien ne saurait la déplier. On reprend donc
  * toujours la valeur du fichier d'origine, jamais zéro.
  */
+/* ⚡ Index de hachage. La version d'origine essayait les 4096 distances
+   une par une à chaque octet : correct, mais de l'ordre de vingt secondes
+   sur un arm9 d'un mégaoctet, fenêtre figée et sans le moindre signe de
+   vie. BLZ comprimant à l'envers, il suffit d'inverser le tampon pour
+   retomber sur un LZ77 classique et indexer les positions par leurs trois
+   premiers octets. Seules les positions réellement candidates sont alors
+   examinées.
+   Le résultat est identique octet pour octet — même règle de choix, la
+   plus petite distance à longueur égale, puisque la chaîne est parcourue
+   de la position la plus récente à la plus ancienne. */
 function blzCompress(raw, keep = 0, hdrLen = 8){
-  const MAXLEN = 18, MAXPOS = 0x1002, MINLEN = 3;
+  const MAXLEN = 18, MAXPOS = 0x1002, MINLEN = 3, MINPOS = 3;
   const n = raw.length;
+  const lim = n - keep;                    // longueur de la zone à comprimer
   const outRev = [];                       // octets émis, dans l'ordre inverse
-  let dst = n;                             // curseur de lecture, recule
-  const rawKeep = keep;
-  let flags;
+
+  const rev = new Uint8Array(lim > 0 ? lim : 0);
+  for (let j = 0; j < lim; j++) rev[j] = raw[n - 1 - j];
+
+  const HSIZE = 1 << 16, HMASK = HSIZE - 1;
+  const head = new Int32Array(HSIZE).fill(-1);
+  const prev = new Int32Array(lim > 0 ? lim : 1).fill(-1);
+  const hash = j => ((rev[j] << 10) ^ (rev[j + 1] << 5) ^ rev[j + 2]) & HMASK;
 
   const chunk = [];
-  while (dst > rawKeep){
-    flags = 0; chunk.length = 0;
-    for (let bit = 0; bit < 8 && dst > rawKeep; bit++){
+  let j = 0;
+  while (j < lim){
+    let flags = 0; chunk.length = 0;
+    for (let bit = 0; bit < 8 && j < lim; bit++){
+      const maxLen = Math.min(MAXLEN, lim - j);
       let best = 0, bestPos = 0;
-      const maxLen = Math.min(MAXLEN, dst - rawKeep);
-      const maxPos = Math.min(MAXPOS, n - dst + 1);
-      for (let pos = MINLEN; pos <= maxPos; pos++){
-        let l = 0;
-        while (l < maxLen && raw[dst - 1 - l] === raw[dst + pos - 1 - l]) l++;
-        if (l > best){ best = l; bestPos = pos; if (l === maxLen) break; }
+      if (maxLen >= MINLEN && j + 2 < lim){
+        const maxD = Math.min(MAXPOS, j);
+        let k = head[hash(j)];
+        while (k >= 0){
+          const d = j - k;
+          if (d > maxD) break;             // chaîne triée : au-delà, plus rien
+          if (d >= MINPOS){
+            let l = 0;
+            while (l < maxLen && rev[j + l] === rev[k + l]) l++;
+            if (l > best){ best = l; bestPos = d; if (l === maxLen) break; }
+          }
+          k = prev[k];
+        }
       }
+      const avance = best >= MINLEN ? best : 1;
       if (best >= MINLEN){
         flags |= 0x80 >>> bit;
         const b1 = ((best - 3) << 4) | (((bestPos - 3) >>> 8) & 0x0F);
         const b2 = (bestPos - 3) & 0xFF;
         chunk.push(b1, b2);
-        dst -= best;
       } else {
-        chunk.push(raw[--dst]);
+        chunk.push(rev[j]);
       }
+      /* Toutes les positions traversées sont indexées, pas seulement la
+         première : en sauter rendrait certaines correspondances
+         invisibles plus loin et changerait la sortie. */
+      for (let s = 0; s < avance; s++){
+        const p = j + s;
+        if (p + 2 < lim){ prev[p] = head[hash(p)]; head[hash(p)] = p; }
+      }
+      j += avance;
     }
     outRev.push(flags);
     for (let i = 0; i < chunk.length; i++) outRev.push(chunk[i]);
@@ -180,6 +213,49 @@ function blzCompress(raw, keep = 0, hdrLen = 8){
   wr32(out, total - 8, (hdr << 24) | ((enc.length + pad + 8) & 0x00FFFFFF));
   wr32(out, total - 4, (n - keep - (enc.length + pad + 8)) >>> 0);
   return out;
+}
+
+/* ---------------------------------------------------------------- *
+ *  ModuleParams — le champ que le jeu lit AVANT de se déplier       *
+ *                                                                  *
+ *  Un arm9 comprimé ne se déplie pas tout seul : le code de         *
+ *  démarrage doit d'abord savoir OÙ finissent les données           *
+ *  comprimées, puisque le pied BLZ se lit depuis la fin. Cette      *
+ *  adresse est rangée dans la structure ModuleParams, en clair dans *
+ *  la tête de l'arm9 — forcément, puisqu'elle est lue avant tout    *
+ *  dépliage.                                                        *
+ *                                                                  *
+ *      +0x14  compressed_static_end   ← adresse de fin, en RAM      *
+ *      +0x18  sdk_version                                           *
+ *      +0x1C  0xDEC00621  ┐ repère de huit octets, invariant        *
+ *      +0x20  0x2106C0DE  ┘                                         *
+ *                                                                  *
+ *  ⚠ Notre compresseur ne rend pas exactement la même taille que    *
+ *  celui de Nintendo. Sans mise à jour de ce champ, le jeu cherche  *
+ *  son pied BLZ à l'ancienne adresse, lit n'importe quoi, et NE     *
+ *  DÉMARRE PAS. C'est invisible sur Diamant, Perle et Platine :     *
+ *  leur arm9 est en clair, le champ vaut zéro et personne ne le     *
+ *  lit. Les six jeux comprimés, eux, échouaient tous.               *
+ * ---------------------------------------------------------------- */
+const NITRO_MARK = [0x21,0x06,0xC0,0xDE,0xDE,0xC0,0x06,0x21];
+
+/**
+ * `limite` borne la recherche à la tête laissée en clair. Au-delà, le
+ * repère ne pourrait être qu'une coïncidence dans le flux comprimé — et
+ * de toute façon le jeu ne saurait pas l'y lire.
+ */
+function findModuleParams(arm9, limite){
+  const fin = Math.min(limite === undefined ? arm9.length : limite, arm9.length);
+  const hits = [];
+  for (let i = 0x18; i + 8 <= fin; i += 4){
+    let k = 0;
+    while (k < 8 && arm9[i+k] === NITRO_MARK[k]) k++;
+    if (k === 8) hits.push(i);
+  }
+  if (hits.length !== 1) return { ok:false, count:hits.length };
+  const mp = hits[0];
+  return { ok:true, mark:mp, endOff:mp - 8, endValue:rd32(arm9, mp - 8),
+           sdkOff:mp - 4, sdkVersion:rd32(arm9, mp - 4) };
 }
 
 /* ---------------------------------------------------------------- *
@@ -397,7 +473,17 @@ const GUARD = {
   reason: null
 };
 
-function patchNds(rom, count, { allowUnverified = false } = {}){
+/**
+ * `analyzeOnly` : s'arrête après le repérage, sans rien recomprimer.
+ *
+ * ⚠ L'ouverture d'une ROM n'a besoin que de savoir ce qui a été trouvé.
+ * Recomprimer à ce moment-là ne sert à rien et gelait la fenêtre une
+ * vingtaine de secondes sur les six jeux comprimés — Platine, Diamant
+ * et Perle ayant un arm9 en clair, ils étaient les seuls à répondre
+ * tout de suite, ce qui donnait l'impression d'un plantage propre aux
+ * autres jeux. L'écriture réelle, elle, passe par le mode complet.
+ */
+function patchNds(rom, count, { allowUnverified = false, analyzeOnly = false } = {}){
   const report = { ok:false, steps:[], hits:[], rom:null };
   const step = (name, ok, detail) => { report.steps.push({ name, ok, detail }); return ok; };
 
@@ -420,13 +506,27 @@ function patchNds(rom, count, { allowUnverified = false } = {}){
 
   const keep = packed ? blzInfo(arm9).rawLen : 0;
 
-  /* Aller-retour à blanc : recomprimer puis redécomprimer doit rendre
-     exactement les mêmes octets, et la tête doit ressortir intacte. */
+  /* Sur une ROM comprimée, ce repérage est éliminatoire : sans lui on
+     produirait une ROM d'apparence saine qui refuse de démarrer. */
+  let mparams = null;
   if (packed){
-    let round = null;
-    try { round = blzDecompress(blzCompress(plain, keep)); } catch (e){ round = null; }
-    const same = round && round.length === plain.length && round.every((v,i) => v === plain[i]);
-    if (!step('aller-retour du codec', !!same)) return report;
+    mparams = findModuleParams(arm9, keep);
+    if (!step('ModuleParams localisés', mparams.ok,
+              mparams.ok ? `repère à 0x${mparams.mark.toString(16).toUpperCase()}, `
+                         + `fin comprimée annoncée à 0x${mparams.endValue.toString(16).toUpperCase()}`
+                         + (mparams.endOff < 0x4000 ? ' — dans la zone sécurisée' : '')
+                         : `${mparams.count} repère(s) trouvé(s) dans la tête en clair, il en faut exactement un`))
+      return report;
+
+    /* Le champ doit désigner la fin de l'arm9 en RAM. S'il en est loin,
+       ce n'est pas la bonne structure : on s'arrête plutôt que d'écrire
+       une adresse au hasard dans le code de démarrage. */
+    const attendu = (h.arm9Ram + arm9.length) >>> 0;
+    const ecart = Math.abs(mparams.endValue - attendu);
+    if (!step('champ de fin cohérent', ecart <= 0x1000,
+              `annoncé 0x${mparams.endValue.toString(16).toUpperCase()}, `
+            + `attendu ~0x${attendu.toString(16).toUpperCase()} (écart ${ecart})`))
+      return report;
   }
 
   report.hits = findShinyChecks(plain);
@@ -443,6 +543,14 @@ function patchNds(rom, count, { allowUnverified = false } = {}){
     return report;
   }
 
+  /* Tout ce qui précède est du repérage et coûte quelques millisecondes.
+     Tout ce qui suit réécrit et recomprime. L'ouverture s'arrête ici. */
+  if (analyzeOnly){
+    report.analyzeOnly = true;
+    report.ok = step('repérage terminé', true, 'écriture différée à l\'export');
+    return report;
+  }
+
   const patches = [...shinyPatches(report.hits, count), ...loopPatches(report.loops)];
   report.patches = patches;
   const out = plain.slice();
@@ -454,8 +562,43 @@ function patchNds(rom, count, { allowUnverified = false } = {}){
     : `octet du cmp, seuil ${patches.find(p=>p.type==='seuil')?.N ?? report.hits[0].old}`);
 
   const newArm9 = packed ? blzCompress(out, keep) : out;
+
+  /* La vérification porte désormais sur l'arm9 réellement produit, et
+     non sur un aller-retour à blanc fait avant la modification. Une
+     seule compression au lieu de deux, et on contrôle l'objet qui part
+     dans la ROM plutôt qu'un brouillon qui lui ressemble. */
+  if (packed){
+    let relu = null;
+    try { relu = blzDecompress(newArm9); } catch (e){ relu = null; }
+    const same = relu && relu.length === out.length && relu.every((v,i) => v === out[i]);
+    if (!step('relecture du codec', !!same,
+              same ? 'l\'arm9 recomprimé se redéplie à l\'identique'
+                   : 'l\'arm9 recomprimé ne se redéplie pas à l\'identique')) return report;
+  }
+
   if (!step('arm9 reconstruit', newArm9.length <= arm9.length,
             `${newArm9.length} octets (origine ${arm9.length})`)) return report;
+
+  /* ⚠ L'ÉTAPE QUI FAIT DÉMARRER LE JEU.
+     La taille comprimée a changé, donc l'adresse de fin annoncée dans
+     ModuleParams est devenue fausse. On la décale du même écart. Sans
+     ça, la ROM est parfaitement formée et le jeu reste sur écran noir. */
+  if (packed){
+    const delta = newArm9.length - arm9.length;
+    const nouvelleFin = (mparams.endValue + delta) >>> 0;
+    wr32(newArm9, mparams.endOff, nouvelleFin);
+    report.moduleParams = { off: mparams.endOff, avant: mparams.endValue,
+                            apres: nouvelleFin, delta };
+    step('fin comprimée recalée', true,
+         `0x${mparams.endValue.toString(16).toUpperCase()} → `
+       + `0x${nouvelleFin.toString(16).toUpperCase()} (${delta >= 0 ? '+' : ''}${delta} octets)`);
+
+    /* Le champ vit dans la tête laissée en clair : il doit être relisible
+       tel quel, sans dépliage. On le relit pour le prouver. */
+    const relu = rd32(newArm9, mparams.endOff);
+    if (!step('champ relu dans l\'arm9 final', relu === nouvelleFin,
+              `0x${relu.toString(16).toUpperCase()}`)) return report;
+  }
 
   report.rom = replaceArm9(rom, newArm9);
   report.ok = step('ROM reconstruite', true, `${report.rom.length} octets`);
@@ -465,7 +608,7 @@ function patchNds(rom, count, { allowUnverified = false } = {}){
 const API = {
   readHeader, crc16, fixHeaderCrc, FIELDS,
   blzInfo, isCompressed, blzDecompress, blzCompress,
-  extractArm9, replaceArm9,
+  extractArm9, replaceArm9, findModuleParams,
   findShinyChecks, findAntiShinyLoops, shinyPatches, loopPatches,
   RATE_MAX_COUNT, normCount, countFromDenominator, decomposer, patchNds, GUARD
 };

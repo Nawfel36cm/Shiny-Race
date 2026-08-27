@@ -1,7 +1,7 @@
 {
   "name": "shiny-race-studio",
-  "version": "1.1.4",
-  "description": "Patcheur de taux shiny et randomizer pour ROMs Pokémon GBA",
+  "version": "1.1.6",
+  "description": "Patcheur de taux shiny et randomizer pour ROMs Pokémon Game Boy Advance et Nintendo DS",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -9,7 +9,7 @@
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
     "build:linux": "electron-builder --linux",
-    "test": "node test/nds.test.js"
+    "test": "node test/nds.test.js && node test/scope.test.js"
   },
   "author": "Nawfel36cm",
   "license": "MIT",

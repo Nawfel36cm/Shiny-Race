@@ -175,7 +175,11 @@ async function ouvrirNds(f, info){
       Vérifie qu'il n'est ni tronqué ni encore dans une archive.</div>`;
     return;
   }
-  ndsRep = window.NDS.patchNds(rom, activeCount());
+  /* Analyse seule : on ne recomprime rien pour afficher une fiche. Le
+     tour complet gelait la fenêtre une vingtaine de secondes sur les six
+     jeux comprimés, d'où l'impression de plantage sur tout sauf Platine,
+     Diamant et Perle, dont l'arm9 est en clair. */
+  ndsRep = window.NDS.patchNds(rom, activeCount(), { analyzeOnly: true });
 
   const trouve = ndsRep.hits.length > 0;
   const boucles = (ndsRep.loops || []).length;
@@ -555,6 +559,11 @@ function summary({ writes, shiny, start, kit, nds }) {
       ? `Fonction de test réécrite — taux obtenu <b>1/${Math.round(65536 / rw.effectif)}</b>.`
       : `Seuil porté à <b>${seuil ? seuil.N : '—'}</b>, soit un taux de <b>${rateLabel()}</b>.`);
     if (boucles) parts.push(`${boucles} boucle anti-shiny neutralisée : sans ça, un taux élevé fige le jeu.`);
+    if (nds.moduleParams){
+      const d = nds.moduleParams.delta;
+      parts.push(`Adresse de fin de l'arm9 comprimé recalée de ${d >= 0 ? '+' : ''}${d} octets : `
+               + `sans ça le jeu ne se déplie pas et reste sur écran noir.`);
+    }
     parts.push(`arm9 reconstruit et sommes de contrôle recalculées.`);
     return parts.join(' ');
   }
@@ -582,8 +591,40 @@ function reportTo(box, p, info) {
   $(box).querySelector('.msg').onclick = () => window.api.reveal(p);
 }
 
+/* La recompression de arm9 est synchrone : elle bloque le dessin tant
+   qu'elle tourne. On affiche donc l'attente AVANT de commencer, puis on
+   rend la main au navigateur le temps qu'il repeigne. Sans ces deux
+   images de repos, le message n'apparaîtrait qu'une fois le travail fini
+   — c'est-à-dire jamais au moment où il servirait. */
+function attendreLeDessin(){
+  return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+}
+async function annoncerTravail(box) {
+  if (plat !== 'nds') return;
+  $(box).innerHTML = `<div class="msg working"><b>Traitement de la ROM en cours…</b>
+    <div class="bar"><span></span></div>
+    <p>L'arm9 est réécrit, recomprimé, puis redéplié pour vérification.
+       Quelques secondes selon le jeu. La fenêtre répondra de nouveau ensuite.</p></div>`;
+  await attendreLeDessin();
+}
+
+/* buildPatched lève quand le module DS s'arrête en route. Sans ce filet,
+   la promesse partait en échec sans que rien ne s'affiche : bouton cliqué,
+   aucune réaction, et l'utilisateur devant une fenêtre muette. */
+function construireOuExpliquer(box) {
+  try { return buildPatched(); }
+  catch (e) {
+    const m = String((e && e.message) || e).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+    $(box).innerHTML = `<div class="msg"><b>Traitement interrompu.</b> ${m}
+      <p>Aucun fichier n'a été écrit. La ROM d'origine est intacte.</p></div>`;
+    return null;
+  }
+}
+
 async function exportRom(box) {
-  const info = buildPatched();
+  await annoncerTravail(box);
+  const info = construireOuExpliquer(box);
+  if (!info) return;
   if (!info.shiny.length && !info.writes.length && !info.start.writes.length && !info.kit.writes.length) {
     $(box).innerHTML = `<div class="msg"><b>Rien à écrire.</b> Aucun changement à appliquer sur cette ROM.</div>`;
     return;
@@ -606,7 +647,9 @@ async function exportRom(box) {
 }
 
 async function exportIps(box) {
-  const info = buildPatched();
+  await annoncerTravail(box);
+  const info = construireOuExpliquer(box);
+  if (!info) return;
   if (!info.shiny.length && !info.writes.length && !info.start.writes.length && !info.kit.writes.length) {
     $(box).innerHTML = `<div class="msg"><b>Rien à écrire.</b> Aucun changement à appliquer sur cette ROM.</div>`;
     return;
@@ -672,6 +715,12 @@ $('customrate').addEventListener('keydown', e => { if (e.key === 'Enter') applyC
  * prouve rien : ici on affiche ce que la ROM contient vraiment.   */
 function diagnostic() {
   if (!rom) return 'Aucune ROM chargee.';
+
+  /* R.readHeader ne lit qu'un en-tete GBA. Sur une ROM DS il rend null,
+     et la ligne suivante levait une erreur : le diagnostic affichait
+     « ERREUR PENDANT LE DIAGNOSTIC » au lieu de diagnostiquer. */
+  if (plat === 'nds') return diagnosticNds();
+
   const L = [];
   const h = R.readHeader(rom);
   L.push('=== SHINY RACE STUDIO — DIAGNOSTIC ===');
@@ -744,6 +793,64 @@ function diagnostic() {
   for (let i = 0; i < rom.length; i++) if (rom[i] !== info.out[i]) diff++;
   L.push('');
   L.push(`total : ${diff} octet(s) different(s) de la ROM d'origine`);
+  return L.join('\n');
+}
+
+/* Diagnostic DS : les memes informations, lues avec le bon module. On
+   refait le tour complet — c'est le seul endroit ou la lenteur eventuelle
+   est acceptable, puisque l'utilisateur demande explicitement un rapport. */
+function diagnosticNds() {
+  const L = [];
+  const N = window.NDS;
+  if (!N) return 'Module Nintendo DS non charge.';
+  const h = N.readHeader(rom);
+  const jeu = window.GAMES.ndsGame(h && h.code);
+  const arm9 = N.extractArm9(rom);
+  const comprime = N.isCompressed(arm9);
+
+  L.push('=== SHINY RACE STUDIO — DIAGNOSTIC NINTENDO DS ===');
+  L.push('version appli : ' + (window.__ver || '?'));
+  L.push(`ROM : ${h ? h.title : '?'} · ${h ? h.code : '????'} · ${(rom.length/1048576).toFixed(0)} Mo`);
+  L.push(`jeu reconnu : ${jeu ? jeu.nom + ' · ' + (jeu.region || 'region inconnue') + ' · gen ' + jeu.gen : 'NON RECONNU'}`);
+  L.push(`arm9 : ${arm9.length} octets · ${comprime ? 'comprime BLZ' : 'en clair'}`);
+  L.push('');
+
+  L.push('--- taux demande ---');
+  const c = activeCount();
+  L.push(`valeurs favorables sur 65536 : ${c}  (soit 1/${Math.round(65536/c)})`);
+  L.push('');
+
+  const t0 = Date.now();
+  const rep = N.patchNds(rom, c);
+  const ms = Date.now() - t0;
+
+  L.push('--- etapes ---');
+  for (const s of rep.steps) L.push(`  ${s.ok ? 'ok  ' : 'ECHEC'} ${s.name}${s.detail ? ' : ' + s.detail : ''}`);
+  L.push('');
+  L.push(`duree du traitement complet : ${ms} ms`);
+  L.push('');
+
+  if (!rep.ok) { L.push('ROM NON PRODUITE.'); return L.join('\n'); }
+
+  const rw = (rep.patches || []).find(p => p.type === 'reecriture');
+  const seuil = (rep.patches || []).find(p => p.type === 'seuil');
+  L.push('--- ecritures ---');
+  L.push(`  fonction localisee a 0x${hex(rep.hits[0].off, 6)}`);
+  L.push(`  ${rw ? 'reecriture de 26 octets, seuil effectif 1/' + Math.round(65536/rw.effectif)
+                : 'octet du cmp porte a ' + (seuil ? seuil.N : 'inchange')}`);
+  L.push(`  boucles anti-shiny neutralisees : ${(rep.loops || []).length}`);
+  L.push('');
+
+  L.push('--- relecture de la ROM patchee ---');
+  const relu = N.extractArm9(rep.rom);
+  const clair = N.isCompressed(relu) ? N.blzDecompress(relu) : relu;
+  const off = rep.hits[0].off;
+  const lu = [...clair.slice(off, off + 26)].map(v => hex(v,2)).join(' ');
+  L.push(`  26 premiers octets de la fonction : ${lu}`);
+  L.push(`  octet de seuil relu : ${clair[off + 24]}`);
+  const hh = N.readHeader(rep.rom);
+  L.push(`  CRC d'en-tete : ${hh.headerCrc === N.crc16(rep.rom,0,0x15E) ? 'valide' : 'INVALIDE'}`);
+  L.push(`  taille : ${rep.rom.length} octets (origine ${rom.length})`);
   return L.join('\n');
 }
 
