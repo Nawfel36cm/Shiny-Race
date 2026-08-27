@@ -1,6 +1,6 @@
 {
   "name": "shiny-race-studio",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Patcheur de taux shiny et randomizer pour ROMs Pokémon Game Boy Advance et Nintendo DS",
   "main": "main.js",
   "scripts": {

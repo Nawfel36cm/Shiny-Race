@@ -40,12 +40,76 @@ function choisir(id){
   $('chooser').hidden = true;
   const eb = document.querySelector('.masthead .eyebrow');
   if (eb) eb.textContent = EYEBROW[id];
-  $('tabs').hidden = false;
+  majDisposition();
   majPlafond();
   renderCompat(id);
   renderRates();
   syncExportButtons();
   show('shiny');
+}
+
+/* --------------------- disposition de la page --------------------
+   Deux mises en page, décidées par le support.
+
+   Game Boy Advance garde ses onglets : quatre traitements distincts,
+   dont un randomizer intégré riche en réglages, qui gagnent à être
+   séparés. Rien n'y change.
+
+   Nintendo DS passe en PAGE UNIQUE : plus de barre d'onglets, tout
+   empilé dans l'ordre où on s'en sert. Deux raisons.
+   → L'onglet « Randomizer intégré » n'existe pas en DS : rencontres,
+     starters et objets vivent dans les archives internes, hors de
+     portée du pilote.
+   → Il ne restait donc que deux traitements, et ils dépendent l'un de
+     l'autre : le bouton du randomizer complet applique le taux réglé
+     plus haut. Les séparer par un onglet cachait ce lien, et on se
+     retrouvait à chercher pourquoi le taux « ne se règle pas ».
+   ---------------------------------------------------------------- */
+const PAGE_UNIQUE = ['shiny', 'upr', 'compat'];   // ordre d'affichage en DS
+const estPageUnique = () => plat === 'nds';
+
+function majDisposition(){
+  const wild = document.querySelector('.tab[data-t="wild"]');
+  const titres = document.querySelectorAll('.pane-title');
+
+  if (estPageUnique()){
+    if (wild){ wild.hidden = true; wild.disabled = true; }
+    $('tabs').hidden = true;
+    document.querySelectorAll('.pane').forEach(p => p.hidden = true);
+    PAGE_UNIQUE.forEach(t => { const e = $('pane-' + t); if (e) e.hidden = false; });
+    titres.forEach(h => h.hidden = false);
+    /* Cette note renvoie au randomizer intégré, qui n'existe pas ici. */
+    const n = $('shinyexportnote');
+    if (n) n.innerHTML = `Le bouton ci-dessus écrit le taux de shiny seul. Pour randomiser
+      <b>et</b> appliquer le taux, utilise le bouton de la section suivante : il fait les deux
+      dans le bon ordre, et n'enregistre rien si l'un des deux échoue.`;
+    return;
+  }
+
+  if (wild){
+    wild.hidden = false;
+    /* Il a été désactivé en passant par la DS. On le réaligne sur son
+       voisin plutôt que de le rouvrir en dur : sans ROM chargée, ni
+       l'un ni l'autre ne doit être cliquable. */
+    const sh = document.querySelector('.tab[data-t="shiny"]');
+    wild.disabled = sh ? sh.disabled : false;
+  }
+  titres.forEach(h => h.hidden = true);
+  $('tabs').hidden = (plat === null);
+  const n = $('shinyexportnote');
+  if (n) n.innerHTML = `Un seul export pour les deux traitements : le taux de shiny <b>et</b> les
+    rencontres sauvages réglées dans l'onglet Randomizer partent ensemble dans le même fichier.
+    Les boutons sont identiques dans les deux onglets.`;
+}
+
+/* Les onglets qui n'ont de sens qu'une fois une ROM ouverte. La liste
+   dépend du support : en DS il n'y a plus d'onglets du tout. */
+function activerOngletsRom(actif){
+  if (estPageUnique()) return;
+  ['shiny', 'wild'].forEach(t => {
+    const b = document.querySelector(`.tab[data-t="${t}"]`);
+    if (b) b.disabled = !actif;
+  });
 }
 
 /* Le plafond du taux n'est pas le même partout : en 3G la constante
@@ -79,7 +143,7 @@ function accueil(){
   ['shinyout','customout','hits'].forEach(id => { if ($(id)) $(id).innerHTML = ''; });
   if ($('customrate')) $('customrate').value = '';
   document.querySelectorAll('.ch-card').forEach(c => c.classList.remove('on'));
-  $('tabs').hidden = true;
+  majDisposition();         // plat vient d'être remis à null : la barre d'onglets revient
   document.querySelectorAll('.pane').forEach(p => p.hidden = true);
   const eb = document.querySelector('.masthead .eyebrow');
   if (eb) eb.textContent = 'Choisis ton support';
@@ -108,7 +172,7 @@ $('open').onclick = async () => {
   rom = new Uint8Array(f.bytes);
   romPath = f.path; romName = f.name;
 
-  ['shiny','wild'].forEach(t => document.querySelector(`.tab[data-t="${t}"]`).disabled = false);
+  activerOngletsRom(true);
   const info = window.PLATFORMS.describe(rom);
 
   /* Le support annoncé et celui de la ROM doivent concorder, sinon on
@@ -117,7 +181,7 @@ $('open').onclick = async () => {
     $('idcard').innerHTML = `<div class="msg"><b>Ce n'est pas une ROM ${NOMS[plat]}.</b>
       Le fichier ouvert est reconnu comme ${info.platform.label}. Change de support en haut de page,
       ou ouvre une autre ROM.</div>`;
-    ['shiny','wild'].forEach(t => document.querySelector(`.tab[data-t="${t}"]`).disabled = true);
+    activerOngletsRom(false);
     return;
   }
   if (info && info.platform.id === 'nds') return ouvrirNds(f, info);
@@ -128,7 +192,7 @@ $('open').onclick = async () => {
   if (!info.usable) {
     $('idcard').innerHTML = platformCard(info, f) + statusCard(info);
     renderCompat(info.platform.id);
-    ['shiny','wild'].forEach(t => document.querySelector(`.tab[data-t="${t}"]`).disabled = true);
+    activerOngletsRom(false);
     show('compat');
     return;
   }
@@ -213,6 +277,9 @@ async function ouvrirNds(f, info){
   show('shiny');
   renderRates(); renderShiny(); renderWildStatus();
   syncExportButtons();
+  /* Page unique : la section randomizer est déjà visible, personne ne
+     cliquera d'onglet pour la réveiller. */
+  if (window.__uprRafraichir) window.__uprRafraichir();
 }
 
 /* --------------------- cartes d'information -------------------- */
@@ -260,6 +327,9 @@ function renderCompat(activePlatform) {
 
 /* --------------------------- onglets -------------------------- */
 function show(t) {
+  /* En page unique, tout est visible en même temps : basculer
+     masquerait les sections voisines. */
+  if (estPageUnique()) return;
   document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', b.dataset.t === t));
   ['shiny', 'wild', 'upr', 'compat'].forEach(p => { const e = $('pane-' + p); if (e) e.hidden = p !== t; });
 }
@@ -1042,7 +1112,10 @@ $('diagcopy').onclick = async () => {
     $('uprmodehelp').innerHTML = M.uprMode(mode).aide;
   }
 
-  $('uprreseed').onclick = () => { $('uprseed').value = Math.random().toString(36).slice(2, 10); };
+  /* Un nombre, pas du base36 : `-z` est lu par Long.parseLong côté
+     randomizer. Une graine texte reste acceptée dans le champ, elle est
+     convertie plus bas — mais celle qu'on propose est déjà valide. */
+  $('uprreseed').onclick = () => { $('uprseed').value = M.uprSeedAuHasard(); };
 
   /* --------------------------- génération --------------------------- */
   function majBouton(){
@@ -1067,11 +1140,16 @@ $('diagcopy').onclick = async () => {
     $('uprout').innerHTML = barre('Randomisation en cours…', -1,
       'Le moteur relit la ROM entière et la reconstruit. Compte une à plusieurs minutes.');
 
-    const graine = $('uprseed').value.trim() || Math.random().toString(36).slice(2, 10);
+    /* Ce que l'utilisateur voit et partage, et ce que le randomizer
+       reçoit, ne sont pas forcément le même objet : `-z` n'accepte
+       qu'un entier. La conversion est déterministe, donc la graine
+       affichée reste la seule chose à communiquer aux autres joueurs. */
+    const graine = $('uprseed').value.trim() || M.uprSeedAuHasard();
     $('uprseed').value = graine;
+    const graineNum = M.uprSeed(graine);
 
     const r = await window.api.upr.run({
-      input: romPath, settings: M.uprMode(mode).settings, seed: graine, log: false
+      input: romPath, settings: M.uprMode(mode).settings, seed: graineNum, log: false
     });
 
     if (!r.ok){
@@ -1114,7 +1192,10 @@ $('diagcopy').onclick = async () => {
     }
 
     const ext = plat === 'nds' ? 'nds' : 'gba';
-    const nom = romName.replace(/\.[^.]+$/, '') + ` [${M.uprMode(mode).id} ${graine} ${rateLabel()}].${ext}`;
+    /* Une graine libre peut contenir des caractères interdits dans un
+       nom de fichier ; l'enregistrement échouerait à la toute fin. */
+    const graineNom = graine.replace(/[\\/:*?"<>|\[\]]/g, '-');
+    const nom = romName.replace(/\.[^.]+$/, '') + ` [${M.uprMode(mode).id} ${graineNom} ${rateLabel()}].${ext}`;
     const p = await window.api.saveBytes({
       data: sortie, defaultName: nom,
       filters: [{ name: plat === 'nds' ? 'ROM Nintendo DS' : 'ROM Game Boy Advance', extensions: [ext] },
@@ -1124,15 +1205,22 @@ $('diagcopy').onclick = async () => {
     occupe = false; majBouton();
     if (!p){ $('uprout').innerHTML = `<div class="msg">Enregistrement annulé. Rien n'a été écrit.</div>`; return; }
     $('uprout').innerHTML = `<div class="msg good"><b>Terminé.</b>
-      Rencontres randomisées en mode « ${M.uprMode(mode).label} », graine <b>${graine}</b>, puis ${resume}.
+      Rencontres randomisées en mode « ${M.uprMode(mode).label} », graine <b>${graineNom}</b>, puis ${resume}.
       <p>Donne cette graine et ce mode aux autres joueurs : sur la même ROM d'origine,
-      ils obtiendront exactement la même randomisation.</p></div>`;
+      ils obtiendront exactement la même randomisation.</p>${
+        graineNum === graine ? '' :
+        `<p class="dimtxt">Graine transmise au moteur : ${graineNum}. Le randomizer n'accepte
+         qu'un nombre ; la conversion est fixe, la graine écrite ci-dessus suffit à la reproduire.</p>`}</div>`;
     $('uprout').querySelector('.msg').onclick = () => window.api.reveal(p);
   };
 
-  /* Le bouton dépend de la ROM chargée : on le rafraîchit à chaque
-     passage sur l'onglet plutôt que d'espionner toutes les ouvertures. */
+  /* Le bouton dépend de la ROM chargée. En 3G on rafraîchit au passage
+     sur l'onglet plutôt que d'espionner toutes les ouvertures. En DS il
+     n'y a plus d'onglet à cliquer : la page est unique, et la section
+     est déjà à l'écran quand la ROM s'ouvre. On expose donc un point
+     d'entrée que l'ouverture appelle directement. */
   document.querySelector('.tab[data-t="upr"]').addEventListener('click', () => { rafraichir(); majBouton(); });
+  window.__uprRafraichir = () => { rafraichir(); majBouton(); };
 
   renderModes();
   rafraichir();

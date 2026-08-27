@@ -236,8 +236,17 @@ ipcMain.handle('upr-run', async (_e, { input, settings, seed, log }) => {
   const sortie = path.join(app.getPath('temp'),
     'shinyrace-upr-' + Date.now() + path.extname(input || '.gba'));
 
+  /* `-z` est lu par Long.parseLong : une graine texte fait échouer
+     l'appel avec un message anglais qui ne dit rien à l'utilisateur, et
+     après plusieurs secondes de démarrage de la JVM. On refuse ici, en
+     français, plutôt que de laisser Java répondre. La conversion d'une
+     graine libre en entier est faite en amont par `uprSeed`. */
+  if (seed !== undefined && seed !== null && String(seed).trim() !== '' &&
+      !/^-?\d{1,19}$/.test(String(seed).trim()))
+    return { ok: false, err: "graine invalide : le randomizer n'accepte qu'un nombre entier." };
+
   const args = ['-Xmx4608M', '-jar', jar.path, 'cli', '-i', input, '-o', sortie, '-S', settings];
-  if (seed) args.push('-z', String(seed));
+  if (seed) args.push('-z', String(seed).trim());
   if (log) args.push('-l');
 
   const r = await run(java.path, args, { cwd: path.dirname(jar.path) });

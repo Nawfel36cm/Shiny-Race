@@ -90,5 +90,37 @@ ok('index.html charge bien ces scripts, dans cet ordre',
    FICHIERS.every((f, i) => balises[i] === f),
    'html : ' + balises.join(', '));
 
+/* ------------------------------------------------------------------ *
+ *  Page unique — Nintendo DS                                          *
+ *                                                                     *
+ *  En DS il n'y a plus de barre d'onglets : app.js affiche les trois   *
+ *  sections en même temps, en les désignant par leur identifiant. Un   *
+ *  pane renommé ou un titre oublié ne lèverait aucune erreur — la      *
+ *  section manquerait simplement à l'écran. D'où ce contrôle.          *
+ * ------------------------------------------------------------------ */
+const app = fs.readFileSync(path.join(SRC, 'app.js'), 'utf8');
+const liste = (app.match(/const PAGE_UNIQUE = \[([^\]]*)\]/) || [])[1];
+const panesDS = liste ? [...liste.matchAll(/'([^']+)'/g)].map(m => m[1]) : [];
+
+ok('app.js déclare la liste des sections de la page unique', panesDS.length > 0,
+   panesDS.join(', '));
+ok('chacune existe dans index.html',
+   panesDS.every(t => html.includes(`id="pane-${t}"`)),
+   panesDS.filter(t => !html.includes(`id="pane-${t}"`)).join(', ') || '');
+
+/* Sans barre d'onglets, les titres sont le seul repère entre sections. */
+const titres = [...html.matchAll(/<h2 class="pane-title"[^>]*>([^<]+)<\/h2>/g)].map(m => m[1]);
+ok('chaque section de la page unique a son titre',
+   titres.length === panesDS.length, titres.join(' · '));
+
+/* Le pane wild n'y figure pas : c'est tout l'objet du retrait en DS. */
+ok('le randomizer intégré est exclu de la page unique',
+   !panesDS.includes('wild'));
+
+/* Note réécrite au vol par majDisposition : sans cet identifiant, la
+   page DS renverrait à un onglet qui n'existe plus. */
+ok('la note d\'export est identifiable', html.includes('id="shinyexportnote"'));
+ok('app.js la réécrit bien', app.includes("$('shinyexportnote')"));
+
 console.log(`\n${pass} réussis, ${fail} échoués\n`);
 process.exit(fail ? 1 : 0);

@@ -70,6 +70,7 @@
 
 <!-- ============================ SHINY ============================ -->
 <section class="pane" id="pane-shiny" hidden>
+  <h2 class="pane-title" hidden>Taux de shiny</h2>
   <div class="field">
     <label>Taux voulu</label>
     <div class="chips" id="rates"></div>
@@ -94,7 +95,7 @@
     <button class="btn ghost" id="shinyips" disabled>Exporter en .ips</button>
   </div>
   <div id="shinyout"></div>
-  <p class="note">Un seul export pour les deux traitements : le taux de shiny <b>et</b> les rencontres
+  <p class="note" id="shinyexportnote">Un seul export pour les deux traitements : le taux de shiny <b>et</b> les rencontres
   sauvages réglées dans l'onglet Randomizer partent ensemble dans le même fichier. Les boutons sont
   identiques dans les deux onglets.</p>
 </section>
@@ -168,6 +169,7 @@
 
 <!-- ====================== RANDOMIZER COMPLET ====================== -->
 <section class="pane" id="pane-upr" hidden>
+  <h2 class="pane-title" hidden>Randomisation des rencontres</h2>
 
   <div class="field">
     <label>Moteur de randomisation</label>
@@ -196,7 +198,9 @@
       <button class="btn ghost small" id="uprreseed">Nouvelle graine</button>
     </div>
     <p class="note">Deux joueurs qui saisissent la même graine sur la même ROM obtiennent
-    exactement la même randomisation. C'est ce qui rend une course comparable.</p>
+    exactement la même randomisation. C'est ce qui rend une course comparable.
+    Un nombre ou du texte libre : le moteur n'accepte qu'un nombre, une graine écrite en
+    toutes lettres est convertie toujours de la même façon.</p>
   </div>
 
   <div class="field">
@@ -214,6 +218,7 @@
 </section>
 
 <section class="pane" id="pane-compat" hidden>
+  <h2 class="pane-title" hidden>Compatibilité</h2>
   <div id="compat"></div>
 </section>
 

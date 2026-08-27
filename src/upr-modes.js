@@ -61,5 +61,43 @@ const UPR_MODES = [
 
 const uprMode = id => UPR_MODES.find(m => m.id === id) || UPR_MODES[0];
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { UPR_MODES, uprMode };
-if (typeof window !== 'undefined') window.UPR_MODES = { UPR_MODES, uprMode };
+/* ---------------------------------------------------------------------
+   La graine
+
+   L'option `-z` du randomizer est lue par `Long.parseLong`. Elle
+   n'accepte donc qu'un entier : une graine texte fait échouer l'appel
+   avec « Invalid seed - could not parse as long », avant même que la
+   ROM soit lue.
+
+   On veut quand même qu'un joueur puisse taper « course-du-samedi »
+   plutôt qu'un nombre. La chaîne est donc convertie en entier par un
+   hachage FNV-1a 32 bits : purement déterministe, sans horloge ni
+   aléa, donc deux joueurs qui saisissent la même graine obtiennent la
+   même ROM — c'est toute la promesse faite à l'écran.
+
+   Une graine déjà numérique passe telle quelle, sans être hachée : elle
+   reste ainsi interchangeable avec l'interface graphique du randomizer.
+   Au-delà de 18 chiffres on hache, un entier plus long ne tient pas
+   dans un `long`.
+   ------------------------------------------------------------------ */
+function uprSeed(v){
+  const t = String(v == null ? '' : v).trim();
+  if (/^-?\d{1,18}$/.test(t)) return t;
+
+  let h = 0x811c9dc5;
+  for (let i = 0; i < t.length; i++){
+    const c = t.charCodeAt(i);
+    h = Math.imul(h ^ (c & 0xff), 0x01000193);
+    if (c > 0xff) h = Math.imul(h ^ (c >>> 8), 0x01000193);
+  }
+  return String(h >>> 0);
+}
+
+/* Graine tirée au sort. Un nombre, pas du base36 : ce qui s'affiche
+   est alors exactement ce que reçoit le randomizer. */
+const uprSeedAuHasard = () => String(Math.floor(Math.random() * 4294967296));
+
+if (typeof module !== 'undefined' && module.exports)
+  module.exports = { UPR_MODES, uprMode, uprSeed, uprSeedAuHasard };
+if (typeof window !== 'undefined')
+  window.UPR_MODES = { UPR_MODES, uprMode, uprSeed, uprSeedAuHasard };

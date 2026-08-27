@@ -9,7 +9,7 @@ const os = require('os');
 const path = require('path');
 const zlib = require('zlib');
 const U = require('../unzip');
-const { UPR_MODES, uprMode } = require('../src/upr-modes');
+const { UPR_MODES, uprMode, uprSeed, uprSeedAuHasard } = require('../src/upr-modes');
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
@@ -179,6 +179,55 @@ console.log('\nModes de randomisation');
      uprMode('nexistepas').id === 'global');
   ok('chaque mode est expliqué en français',
      UPR_MODES.every(m => m.aide && m.aide.length > 40 && m.label));
+}
+
+/* ------------------------------------------------------------------ *
+ *  La graine                                                          *
+ *                                                                     *
+ *  `-z` est lu par Long.parseLong côté randomizer. Tout ce qui n'est  *
+ *  pas un entier fait échouer l'appel avec « Invalid seed - could     *
+ *  not parse as long » — le bug qui rendait le bouton inutilisable    *
+ *  quelle que soit la ROM.                                            *
+ * ------------------------------------------------------------------ */
+{
+  console.log('\nGraine du randomizer');
+
+  const entier = v => /^-?\d{1,19}$/.test(v);
+
+  ok('une graine texte devient un entier',   entier(uprSeed('course-du-samedi')), uprSeed('course-du-samedi'));
+  ok('une graine accentuée aussi',           entier(uprSeed('épreuve n°1')),      uprSeed('épreuve n°1'));
+  ok('une graine vide aussi',                entier(uprSeed('')));
+  ok('une graine absente aussi',             entier(uprSeed(undefined)) && entier(uprSeed(null)));
+  ok('une graine base36 aussi',              entier(uprSeed('k3f9x2ab')), '← la forme exacte qui plantait');
+
+  /* Deux joueurs qui saisissent la même graine doivent obtenir la même
+     ROM : c'est la promesse faite à l'écran. Aucun aléa, aucune
+     horloge dans la conversion. */
+  ok('la conversion est déterministe',
+     uprSeed('race') === uprSeed('race') && uprSeed('race') === uprSeed(' race '));
+  ok('deux graines différentes donnent deux nombres différents',
+     uprSeed('race-01') !== uprSeed('race-02'));
+
+  /* Une graine déjà numérique n'est pas touchée : elle reste
+     interchangeable avec l'interface graphique du randomizer. */
+  ok('un nombre passe tel quel',       uprSeed('123456') === '123456');
+  ok('un nombre négatif passe aussi',  uprSeed('-42') === '-42');
+  ok('un nombre trop long est haché',
+     uprSeed('12345678901234567890') !== '12345678901234567890'
+     && entier(uprSeed('12345678901234567890')));
+
+  /* Le tirage au sort doit produire directement une graine valide :
+     c'est la valeur que le bouton écrit dans le champ. */
+  let tousEntiers = true, distincts = new Set();
+  for (let i = 0; i < 200; i++){
+    const g = uprSeedAuHasard();
+    if (!entier(g)) tousEntiers = false;
+    distincts.add(g);
+  }
+  ok('le tirage au sort produit un entier', tousEntiers);
+  ok('le tirage au sort ne se répète pas', distincts.size > 190, distincts.size + '/200');
+  ok('une graine tirée au sort passe la conversion inchangée',
+     (g => uprSeed(g) === g)(uprSeedAuHasard()));
 }
 
 console.log(`\n${pass} réussis, ${fail} échoués\n`);
